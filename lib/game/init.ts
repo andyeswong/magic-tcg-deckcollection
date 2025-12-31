@@ -234,6 +234,8 @@ export function drawInitialHand(gameState: GameState, playerId: string): void {
 
 // Start the game (draw initial hands and advance to first interactive phase)
 export function startGame(gameState: GameState): void {
+  console.log(`[GAME] Starting game, initial phase: ${gameState.turnState.phase}`)
+
   Object.keys(gameState.players).forEach((playerId) => {
     drawInitialHand(gameState, playerId)
   })
@@ -245,6 +247,7 @@ export function startGame(gameState: GameState): void {
   const maxIterations = 20
   const interactivePhases = ["DRAW", "MAIN_1", "DECLARE_ATTACKERS", "MAIN_2"]
 
+  console.log(`[GAME] Auto-advancing to first interactive phase...`)
   while (!interactivePhases.includes(gameState.turnState.phase) && iterations < maxIterations) {
     // Simple phase advance logic here
     const phaseOrder = [
@@ -262,7 +265,10 @@ export function startGame(gameState: GameState): void {
       "CLEANUP",
     ]
     const currentIndex = phaseOrder.indexOf(gameState.turnState.phase)
-    gameState.turnState.phase = phaseOrder[(currentIndex + 1) % phaseOrder.length]
+    const nextPhase = phaseOrder[(currentIndex + 1) % phaseOrder.length]
+    console.log(`[GAME] Iteration ${iterations}: ${gameState.turnState.phase} -> ${nextPhase}`)
+    gameState.turnState.phase = nextPhase
     iterations++
   }
+  console.log(`[GAME] Game started in phase: ${gameState.turnState.phase}`)
 }

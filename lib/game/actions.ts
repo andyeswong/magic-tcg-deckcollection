@@ -29,7 +29,9 @@ export function isInteractivePhase(phase: Phase): boolean {
   // Phases where player can take actions
   const interactivePhases: Phase[] = ["DRAW", "MAIN_1", "DECLARE_ATTACKERS", "MAIN_2"]
 
-  return interactivePhases.includes(phase)
+  const result = interactivePhases.includes(phase)
+  console.log(`[PHASE] Is ${phase} interactive? ${result}`)
+  return result
 }
 
 // Action: Draw a card
@@ -351,6 +353,7 @@ export function advancePhase(gameState: GameState): void {
   const currentPhase = gameState.turnState.phase
   const nextPhase = getNextPhase(currentPhase)
 
+  console.log(`[PHASE] Advancing from ${currentPhase} to ${nextPhase}`)
   gameState.turnState.phase = nextPhase
 
   // If we wrapped around to UNTAP, it's a new turn
@@ -415,12 +418,15 @@ export function advancePhase(gameState: GameState): void {
 
 // Helper: Advance to the next interactive phase
 export function advanceToNextInteractivePhase(gameState: GameState): void {
+  console.log(`[PHASE] advanceToNextInteractivePhase called, current phase: ${gameState.turnState.phase}`)
   let iterations = 0
   const maxIterations = 20 // Safety limit
 
   // Keep advancing until we hit an interactive phase
   while (!isInteractivePhase(gameState.turnState.phase) && iterations < maxIterations) {
+    console.log(`[PHASE] Auto-advancing iteration ${iterations}`)
     advancePhase(gameState)
     iterations++
   }
+  console.log(`[PHASE] Stopped at ${gameState.turnState.phase} after ${iterations} iterations`)
 }
