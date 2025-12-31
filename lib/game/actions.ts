@@ -391,6 +391,15 @@ export function advancePhase(gameState: GameState): void {
     if (gameState.turnState.turnNumber > 1 || gameState.turnState.activePlayerId !== Object.keys(gameState.players)[0]) {
       drawCard(gameState, gameState.turnState.activePlayerId)
     }
+    // Auto-advance to next interactive phase after drawing
+    advanceToNextInteractivePhase(gameState)
+    return
+  }
+
+  if (nextPhase === "UNTAP") {
+    // After untapping, auto-advance to next interactive phase
+    advanceToNextInteractivePhase(gameState)
+    return
   }
 
   if (nextPhase === "MAIN_1" || nextPhase === "MAIN_2") {
