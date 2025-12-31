@@ -2,8 +2,9 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Download, Upload } from "lucide-react"
+import { Download, Upload, Play } from "lucide-react"
 import { DeckImportDialog } from "@/components/deck-import-dialog"
+import Link from "next/link"
 
 interface DeckActionsProps {
   deckId: string
@@ -21,6 +22,12 @@ export function DeckActions({ deckId, deckName }: DeckActionsProps) {
   return (
     <>
       <div className="flex gap-2">
+        <Button asChild size="sm">
+          <Link href={`/play/${deckId}`}>
+            <Play className="mr-2 h-4 w-4" />
+            Play
+          </Link>
+        </Button>
         <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)}>
           <Upload className="mr-2 h-4 w-4" />
           Import
