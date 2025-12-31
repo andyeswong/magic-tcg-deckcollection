@@ -96,7 +96,12 @@ export function untapPermanent(gameState: GameState, cardInstanceId: string): bo
 }
 
 // Action: Add mana to pool (when tapping a land)
-export function addManaFromLand(gameState: GameState, playerId: string, cardInstanceId: string): boolean {
+export function addManaFromLand(
+  gameState: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  chosenColor?: string,
+): boolean {
   const card = gameState.entities[cardInstanceId]
 
   // Tap the land
@@ -105,6 +110,12 @@ export function addManaFromLand(gameState: GameState, playerId: string, cardInst
   }
 
   const player = gameState.players[playerId]
+
+  // If a color was chosen (for dual lands), use that
+  if (chosenColor && ["W", "U", "B", "R", "G", "C"].includes(chosenColor)) {
+    player.manaPool[chosenColor as keyof typeof player.manaPool]++
+    return true
+  }
 
   // Basic lands produce specific mana
   if (card.name === "Plains" || card.name.includes("Plains")) player.manaPool.W++

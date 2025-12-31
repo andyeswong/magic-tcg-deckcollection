@@ -15,7 +15,7 @@ interface GameStore {
   playLand: (playerId: string, cardInstanceId: string) => boolean
   tapPermanent: (cardInstanceId: string) => boolean
   untapPermanent: (cardInstanceId: string) => boolean
-  addManaFromLand: (playerId: string, cardInstanceId: string) => boolean
+  addManaFromLand: (playerId: string, cardInstanceId: string, chosenColor?: string) => boolean
   castSpell: (playerId: string, cardInstanceId: string) => boolean
   declareAttackers: (playerId: string, attackers: Array<{ attackerId: string; targetId: string }>) => boolean
   advancePhase: () => void
@@ -88,11 +88,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return success
   },
 
-  addManaFromLand: (playerId, cardInstanceId) => {
+  addManaFromLand: (playerId, cardInstanceId, chosenColor) => {
     const { gameState } = get()
     if (!gameState) return false
 
-    const success = actions.addManaFromLand(gameState, playerId, cardInstanceId)
+    const success = actions.addManaFromLand(gameState, playerId, cardInstanceId, chosenColor)
     if (success) {
       set({ gameState: { ...gameState } })
     }

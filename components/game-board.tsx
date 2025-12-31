@@ -5,9 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { GameCard } from "@/components/game-card"
+import { ManaPoolDisplay } from "@/components/mana-pool-display"
+import { ManaChoiceDialog } from "@/components/mana-choice-dialog"
 import { useGameStore } from "@/lib/game/store"
 import { executeBotTurn } from "@/lib/game/bot"
+import { parseLandManaOptions, isDualLand } from "@/lib/game/land-parser"
 import { Play, SkipForward, Swords } from "lucide-react"
+import { toast } from "sonner"
+import type { ManaColor } from "@/lib/game/types"
 
 export function GameBoard() {
   const {
@@ -24,6 +29,8 @@ export function GameBoard() {
 
   const [selectedCard, setSelectedCard] = useState<string | null>(null)
   const [attackers, setAttackers] = useState<string[]>([])
+  const [manaChoiceOpen, setManaChoiceOpen] = useState(false)
+  const [manaChoiceCard, setManaChoiceCard] = useState<string | null>(null)
 
   if (!gameState) {
     return (
@@ -74,19 +81,56 @@ export function GameBoard() {
   const handlePlayLand = () => {
     if (!selectedCard) return
     const success = playLand(humanPlayerId, selectedCard)
-    if (success) setSelectedCard(null)
+    if (success) {
+      toast.success("Land played successfully")
+      setSelectedCard(null)
+    } else {
+      toast.error("Cannot play land (already played one this turn or not in hand)")
+    }
   }
 
   const handleTapForMana = () => {
     if (!selectedCard) return
-    const success = addManaFromLand(humanPlayerId, selectedCard)
-    if (success) setSelectedCard(null)
+    const card = gameState.entities[selectedCard]
+
+    // Check if it's a dual land
+    if (isDualLand(card.oracleText || "", card.name)) {
+      setManaChoiceCard(selectedCard)
+      setManaChoiceOpen(true)
+    } else {
+      const success = addManaFromLand(humanPlayerId, selectedCard)
+      if (success) {
+        toast.success("Mana added to pool")
+        setSelectedCard(null)
+      } else {
+        toast.error("Cannot tap land (already tapped or not on battlefield)")
+      }
+    }
+  }
+
+  const handleManaChoice = (color: ManaColor) => {
+    if (!manaChoiceCard) return
+
+    const success = addManaFromLand(humanPlayerId, manaChoiceCard, color)
+    if (success) {
+      toast.success(`Added ${color} mana to pool`)
+      setSelectedCard(null)
+      setManaChoiceCard(null)
+    } else {
+      toast.error("Failed to add mana")
+    }
   }
 
   const handleCastSpell = () => {
     if (!selectedCard) return
+    const card = gameState.entities[selectedCard]
     const success = castSpell(humanPlayerId, selectedCard)
-    if (success) setSelectedCard(null)
+    if (success) {
+      toast.success(`${card.name} cast successfully`)
+      setSelectedCard(null)
+    } else {
+      toast.error("Cannot cast spell (not enough mana or not in hand)")
+    }
   }
 
   const handleDeclareAttackers = () => {
@@ -167,7 +211,7 @@ export function GameBoard() {
                 </div>
               </div>
               <div className="text-white text-sm">
-                <div>Mana: {Object.entries(botPlayer.manaPool).map(([color, amount]) => amount > 0 && `${color}:${amount}`).filter(Boolean).join(" ") || "None"}</div>
+                <ManaPoolDisplay manaPool={botPlayer.manaPool} size="sm" />
               </div>
             </div>
           </CardHeader>
@@ -204,7 +248,7 @@ export function GameBoard() {
                 </div>
               </div>
               <div className="text-white text-sm">
-                <div>Mana: {Object.entries(humanPlayer.manaPool).map(([color, amount]) => amount > 0 && `${color}:${amount}`).filter(Boolean).join(" ") || "None"}</div>
+                <ManaPoolDisplay manaPool={humanPlayer.manaPool} size="sm" />
               </div>
             </div>
           </CardHeader>
@@ -296,6 +340,20 @@ export function GameBoard() {
               </p>
             </CardContent>
           </Card>
+        )}
+
+        {/* Mana Choice Dialog */}
+        {manaChoiceCard && (
+          <ManaChoiceDialog
+            open={manaChoiceOpen}
+            onOpenChange={setManaChoiceOpen}
+            options={parseLandManaOptions(
+              gameState.entities[manaChoiceCard].oracleText || "",
+              gameState.entities[manaChoiceCard].name,
+            )}
+            landName={gameState.entities[manaChoiceCard].name}
+            onChoose={handleManaChoice}
+          />
         )}
       </div>
     </div>
