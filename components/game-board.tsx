@@ -24,6 +24,7 @@ export function GameBoard() {
     addManaFromLand,
     declareAttackers,
     advancePhase,
+    advanceToNextInteractivePhase,
     endTurn,
   } = useGameStore()
 
@@ -185,9 +186,9 @@ export function GameBoard() {
                       Attack ({attackers.length})
                     </Button>
                   ) : null}
-                  <Button onClick={advancePhase} variant="outline">
+                  <Button onClick={advanceToNextInteractivePhase} variant="outline">
                     <SkipForward className="mr-2 h-4 w-4" />
-                    Next Phase
+                    {phase === "DRAW" ? "Continue" : "Next Phase"}
                   </Button>
                   <Button onClick={endTurn} variant="default">
                     End Turn

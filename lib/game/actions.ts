@@ -24,6 +24,14 @@ export function getNextPhase(currentPhase: Phase): Phase {
   return phaseOrder[currentIndex + 1]
 }
 
+// Helper: Check if phase requires player interaction
+export function isInteractivePhase(phase: Phase): boolean {
+  // Phases where player can take actions
+  const interactivePhases: Phase[] = ["DRAW", "MAIN_1", "DECLARE_ATTACKERS", "MAIN_2"]
+
+  return interactivePhases.includes(phase)
+}
+
 // Action: Draw a card
 export function drawCard(gameState: GameState, playerId: string): void {
   const player = gameState.players[playerId]
@@ -379,8 +387,10 @@ export function advancePhase(gameState: GameState): void {
   }
 
   if (nextPhase === "DRAW") {
-    // Active player draws a card
-    drawCard(gameState, gameState.turnState.activePlayerId)
+    // Active player draws a card (skip on turn 1 for first player)
+    if (gameState.turnState.turnNumber > 1 || gameState.turnState.activePlayerId !== Object.keys(gameState.players)[0]) {
+      drawCard(gameState, gameState.turnState.activePlayerId)
+    }
   }
 
   if (nextPhase === "MAIN_1" || nextPhase === "MAIN_2") {
@@ -400,5 +410,17 @@ export function advancePhase(gameState: GameState): void {
     Object.values(gameState.players).forEach((player) => {
       player.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }
     })
+  }
+}
+
+// Helper: Advance to the next interactive phase
+export function advanceToNextInteractivePhase(gameState: GameState): void {
+  let iterations = 0
+  const maxIterations = 20 // Safety limit
+
+  // Keep advancing until we hit an interactive phase
+  while (!isInteractivePhase(gameState.turnState.phase) && iterations < maxIterations) {
+    advancePhase(gameState)
+    iterations++
   }
 }

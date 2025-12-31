@@ -19,6 +19,7 @@ interface GameStore {
   castSpell: (playerId: string, cardInstanceId: string) => boolean
   declareAttackers: (playerId: string, attackers: Array<{ attackerId: string; targetId: string }>) => boolean
   advancePhase: () => void
+  advanceToNextInteractivePhase: () => void
   endTurn: () => void
   resetGame: () => void
 }
@@ -126,6 +127,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!gameState) return
 
     actions.advancePhase(gameState)
+    set({ gameState: { ...gameState } })
+  },
+
+  advanceToNextInteractivePhase: () => {
+    const { gameState } = get()
+    if (!gameState) return
+
+    actions.advanceToNextInteractivePhase(gameState)
     set({ gameState: { ...gameState } })
   },
 

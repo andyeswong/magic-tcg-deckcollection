@@ -2,6 +2,7 @@
 
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { CardPreview } from "@/components/card-preview"
 import type { CardInstance } from "@/lib/game/types"
 import { cn } from "@/lib/utils"
 
@@ -22,17 +23,18 @@ export function GameCard({ card, onClick, selectable, selected, showDetails = tr
   }
 
   return (
-    <Card
-      className={cn(
-        "relative overflow-hidden transition-all",
-        sizeClasses[size],
-        card.tapped && "rotate-90",
-        selectable && "cursor-pointer hover:ring-2 hover:ring-primary",
-        selected && "ring-2 ring-primary",
-        card.summoningSick && "opacity-70",
-      )}
-      onClick={onClick}
-    >
+    <CardPreview card={card}>
+      <Card
+        className={cn(
+          "relative overflow-hidden transition-all",
+          sizeClasses[size],
+          card.tapped && "rotate-90",
+          selectable && "cursor-pointer hover:ring-2 hover:ring-primary",
+          selected && "ring-2 ring-primary",
+          card.summoningSick && "opacity-70",
+        )}
+        onClick={onClick}
+      >
       {/* Card Image */}
       {card.imageUrl ? (
         <img src={card.imageUrl} alt={card.name} className="w-full h-full object-cover" />
@@ -67,6 +69,7 @@ export function GameCard({ card, onClick, selectable, selected, showDetails = tr
           </Badge>
         </div>
       )}
-    </Card>
+      </Card>
+    </CardPreview>
   )
 }
