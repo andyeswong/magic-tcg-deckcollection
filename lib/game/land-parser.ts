@@ -11,27 +11,37 @@ export function parseLandManaOptions(oracleText: string, name: string): ManaColo
   if (name.includes("Mountain")) return ["R"]
   if (name.includes("Forest")) return ["G"]
 
-  // Parse oracle text for mana abilities
-  // Look for patterns like "{T}: Add {G} or {W}" or "{T}: Add {G} or {W} or {U}"
-  const manaPattern = /\{T\}:\s*Add\s+([^.]+)/i
-  const match = oracleText?.match(manaPattern)
+  // Parse oracle text for mana abilities with choices (contains "or")
+  // Look for patterns like "{T}: Add {G} or {W}"
+  // Split by lines/sentences to handle multiple abilities
+  const lines = oracleText?.split(/[.\n]/) || []
 
-  if (match) {
-    const manaText = match[1]
-
-    // Extract all mana symbols like {G}, {W}, {U}, etc.
-    const symbols = manaText.match(/\{([WUBRGC])\}/g)
-    if (symbols) {
-      symbols.forEach((symbol) => {
-        const color = symbol.slice(1, -1) as ManaColor
-        if (!options.includes(color)) {
-          options.push(color)
-        }
-      })
+  for (const line of lines) {
+    // Only look at lines with "or" in them (choice abilities)
+    if (line.includes(" or ") && line.includes("{T}") && line.includes("Add")) {
+      // Extract all mana symbols from this line
+      const symbols = line.match(/\{([WUBRGC])\}/g)
+      if (symbols) {
+        symbols.forEach((symbol) => {
+          const color = symbol.slice(1, -1) as ManaColor
+          if (!options.includes(color)) {
+            options.push(color)
+          }
+        })
+      }
     }
   }
 
-  // If no mana found, default to colorless
+  // If no choice abilities found, look for single fixed ability
+  if (options.length === 0) {
+    const singlePattern = /\{T\}:\s*Add\s+\{([WUBRGC])\}/i
+    const match = oracleText?.match(singlePattern)
+    if (match) {
+      options.push(match[1] as ManaColor)
+    }
+  }
+
+  // If still no mana found, default to colorless
   if (options.length === 0) {
     options.push("C")
   }
@@ -39,8 +49,30 @@ export function parseLandManaOptions(oracleText: string, name: string): ManaColo
   return options
 }
 
-// Check if a land produces multiple mana types
+// Check if a land produces multiple mana types (requires choice)
 export function isDualLand(oracleText: string, name: string): boolean {
-  const options = parseLandManaOptions(oracleText, name)
-  return options.length > 1
+  // Basic lands are not dual lands
+  if (
+    name.includes("Plains") ||
+    name.includes("Island") ||
+    name.includes("Swamp") ||
+    name.includes("Mountain") ||
+    name.includes("Forest")
+  ) {
+    return false
+  }
+
+  // Check if oracle text has a choice ability (contains "or")
+  const lines = oracleText?.split(/[.\n]/) || []
+  for (const line of lines) {
+    if (line.includes(" or ") && line.includes("{T}") && line.includes("Add")) {
+      // Count how many mana symbols are in the choice
+      const symbols = line.match(/\{([WUBRGC])\}/g)
+      if (symbols && symbols.length > 1) {
+        return true
+      }
+    }
+  }
+
+  return false
 }
