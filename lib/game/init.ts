@@ -241,11 +241,11 @@ export function startGame(gameState: GameState): void {
   })
   gameState.status = "PLAYING"
 
-  // Advance to the first interactive phase (DRAW -> MAIN_1)
+  // Advance to the first interactive phase (MAIN_1)
   // Import at top of file would cause circular dependency, so using inline logic
   let iterations = 0
   const maxIterations = 20
-  const interactivePhases = ["DRAW", "MAIN_1", "DECLARE_ATTACKERS", "MAIN_2"]
+  const interactivePhases = ["MAIN_1", "DECLARE_ATTACKERS", "MAIN_2"]
 
   console.log(`[GAME] Auto-advancing to first interactive phase...`)
   while (!interactivePhases.includes(gameState.turnState.phase) && iterations < maxIterations) {

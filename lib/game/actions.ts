@@ -27,7 +27,8 @@ export function getNextPhase(currentPhase: Phase): Phase {
 // Helper: Check if phase requires player interaction
 export function isInteractivePhase(phase: Phase): boolean {
   // Phases where player can take actions
-  const interactivePhases: Phase[] = ["DRAW", "MAIN_1", "DECLARE_ATTACKERS", "MAIN_2"]
+  // DRAW is automatic (just draws a card), MAIN_1 is first interactive phase
+  const interactivePhases: Phase[] = ["MAIN_1", "DECLARE_ATTACKERS", "MAIN_2"]
 
   const result = interactivePhases.includes(phase)
   console.log(`[PHASE] Is ${phase} interactive? ${result}`)
