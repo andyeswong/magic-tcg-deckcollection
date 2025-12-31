@@ -127,6 +127,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!gameState) return
 
     actions.advancePhase(gameState)
+
+    // Auto-advance through non-interactive phases
+    actions.advanceToNextInteractivePhase(gameState)
+
     set({ gameState: { ...gameState } })
   },
 

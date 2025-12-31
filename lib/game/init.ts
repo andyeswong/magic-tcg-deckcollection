@@ -232,10 +232,37 @@ export function drawInitialHand(gameState: GameState, playerId: string): void {
   }
 }
 
-// Start the game (draw initial hands)
+// Start the game (draw initial hands and advance to first interactive phase)
 export function startGame(gameState: GameState): void {
   Object.keys(gameState.players).forEach((playerId) => {
     drawInitialHand(gameState, playerId)
   })
   gameState.status = "PLAYING"
+
+  // Advance to the first interactive phase (DRAW -> MAIN_1)
+  // Import at top of file would cause circular dependency, so using inline logic
+  let iterations = 0
+  const maxIterations = 20
+  const interactivePhases = ["DRAW", "MAIN_1", "DECLARE_ATTACKERS", "MAIN_2"]
+
+  while (!interactivePhases.includes(gameState.turnState.phase) && iterations < maxIterations) {
+    // Simple phase advance logic here
+    const phaseOrder = [
+      "UNTAP",
+      "UPKEEP",
+      "DRAW",
+      "MAIN_1",
+      "COMBAT_BEGIN",
+      "DECLARE_ATTACKERS",
+      "DECLARE_BLOCKERS",
+      "COMBAT_DAMAGE",
+      "COMBAT_END",
+      "MAIN_2",
+      "END_STEP",
+      "CLEANUP",
+    ]
+    const currentIndex = phaseOrder.indexOf(gameState.turnState.phase)
+    gameState.turnState.phase = phaseOrder[(currentIndex + 1) % phaseOrder.length]
+    iterations++
+  }
 }
