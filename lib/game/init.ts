@@ -84,6 +84,7 @@ function createPlayerState(playerId: string, playerName: string): PlayerState {
       maxLandsPerTurn: 1,
       canCastSorcery: false,
     },
+    commanderTax: 0,
     hand: [],
     library: [],
     graveyard: [],

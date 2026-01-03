@@ -21,6 +21,7 @@ export function GameBoard() {
     botPlayerId,
     playLand,
     castSpell,
+    castCommander,
     addManaFromLand,
     declareAttackers,
     advancePhase,
@@ -131,6 +132,17 @@ export function GameBoard() {
       setSelectedCard(null)
     } else {
       toast.error("Cannot cast spell (not enough mana or not in hand)")
+    }
+  }
+
+  const handleCastCommander = () => {
+    const success = castCommander(humanPlayerId)
+    if (success) {
+      const commanderId = humanPlayer.commandZone[0]
+      const commanderName = commanderId ? gameState.entities[commanderId]?.name : "Commander"
+      toast.success(`${commanderName} cast from command zone`)
+    } else {
+      toast.error("Cannot cast commander (not enough mana or not in command zone)")
     }
   }
 
@@ -255,6 +267,32 @@ export function GameBoard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
+              {/* Commander Zone */}
+              {humanPlayer.commandZone.length > 0 && (
+                <div className="bg-purple-900/30 p-3 rounded-lg border-2 border-purple-500">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm text-white font-bold flex items-center gap-2">
+                      <span className="text-xl">👑</span>
+                      Commander Zone
+                    </p>
+                    {isHumanTurn && (phase === "MAIN_1" || phase === "MAIN_2") && (
+                      <Button onClick={handleCastCommander} size="sm" variant="secondary">
+                        <Play className="mr-2 h-3 w-3" />
+                        Cast Commander
+                        {humanPlayer.commanderTax > 0 && (
+                          <span className="ml-2 text-xs opacity-75">(+{humanPlayer.commanderTax * 2} mana)</span>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    {humanPlayer.commandZone.map((cardId) => (
+                      <GameCard key={cardId} card={gameState.entities[cardId]} size="medium" showDetails={true} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Battlefield */}
               <div>
                 <p className="text-sm text-white mb-2">Battlefield ({humanBattlefield.length})</p>

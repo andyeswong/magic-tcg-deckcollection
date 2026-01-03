@@ -99,6 +99,7 @@ export interface PlayerState {
   commanderDamageTaken: Record<string, number> // commanderInstanceId -> damage
   manaPool: ManaPool
   flags: PlayerFlags
+  commanderTax: number // How many times commander has been cast (adds {2} per cast)
 
   // Player-specific zones (IDs referencing CardInstances)
   hand: string[]

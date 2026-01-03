@@ -17,6 +17,7 @@ interface GameStore {
   untapPermanent: (cardInstanceId: string) => boolean
   addManaFromLand: (playerId: string, cardInstanceId: string, chosenColor?: string) => boolean
   castSpell: (playerId: string, cardInstanceId: string) => boolean
+  castCommander: (playerId: string) => boolean
   declareAttackers: (playerId: string, attackers: Array<{ attackerId: string; targetId: string }>) => boolean
   advancePhase: () => void
   advanceToNextInteractivePhase: () => void
@@ -105,6 +106,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!gameState) return false
 
     const success = actions.castSpell(gameState, playerId, cardInstanceId)
+    if (success) {
+      set({ gameState: { ...gameState } })
+    }
+    return success
+  },
+
+  castCommander: (playerId) => {
+    const { gameState } = get()
+    if (!gameState) return false
+
+    const success = actions.castCommander(gameState, playerId)
     if (success) {
       set({ gameState: { ...gameState } })
     }

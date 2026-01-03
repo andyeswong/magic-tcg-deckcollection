@@ -220,6 +220,66 @@ export function spendMana(gameState: GameState, playerId: string, manaCost: stri
   return true
 }
 
+// Helper: Calculate commander tax cost
+function calculateCommanderCost(baseCost: string, taxCount: number): string {
+  if (taxCount === 0) return baseCost
+
+  // Add {2} for each time cast beyond the first
+  const additionalCost = taxCount * 2
+
+  // Parse base cost and add generic mana
+  if (!baseCost) return `{${additionalCost}}`
+
+  // Extract existing generic mana
+  const genericMatch = baseCost.match(/\{(\d+)\}/)
+  const existingGeneric = genericMatch ? parseInt(genericMatch[1]) : 0
+  const newGeneric = existingGeneric + additionalCost
+
+  // Replace or add generic cost
+  if (genericMatch) {
+    return baseCost.replace(/\{\d+\}/, `{${newGeneric}}`)
+  } else {
+    return `{${additionalCost}}` + baseCost
+  }
+}
+
+// Action: Cast commander from command zone
+export function castCommander(gameState: GameState, playerId: string): boolean {
+  const player = gameState.players[playerId]
+
+  // Check if there's a commander in command zone
+  if (player.commandZone.length === 0) {
+    return false
+  }
+
+  const commanderId = player.commandZone[0]
+  const commander = gameState.entities[commanderId]
+
+  // Calculate cost with tax
+  const actualCost = calculateCommanderCost(commander.manaCost, player.commanderTax)
+
+  // Check if can afford
+  if (!canAffordManaCost(gameState, playerId, actualCost)) {
+    return false
+  }
+
+  // Spend mana
+  spendMana(gameState, playerId, actualCost)
+
+  // Move from command zone to battlefield
+  player.commandZone = player.commandZone.filter((id) => id !== commanderId)
+  gameState.battlefield.push(commanderId)
+  commander.zone = "BATTLEFIELD"
+  commander.summoningSick = true
+
+  // Increment commander tax
+  player.commanderTax++
+
+  console.log(`[COMMANDER] Cast ${commander.name} with tax ${player.commanderTax - 1} (cost: ${actualCost})`)
+
+  return true
+}
+
 // Action: Cast a spell (simplified)
 export function castSpell(gameState: GameState, playerId: string, cardInstanceId: string): boolean {
   const player = gameState.players[playerId]
