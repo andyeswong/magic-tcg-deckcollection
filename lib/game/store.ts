@@ -18,7 +18,7 @@ interface GameStore {
   tapPermanent: (cardInstanceId: string) => boolean
   untapPermanent: (cardInstanceId: string) => boolean
   addManaFromLand: (playerId: string, cardInstanceId: string, chosenColor?: string) => boolean
-  castSpell: (playerId: string, cardInstanceId: string, xValue?: number) => boolean
+  castSpell: (playerId: string, cardInstanceId: string, xValue?: number, targets?: string[]) => boolean
   castCommander: (playerId: string) => boolean
   declareAttackers: (playerId: string, attackers: Array<{ attackerId: string; targetId: string }>) => boolean
   declareBlockers: (playerId: string, blocks: Array<{ blockerId: string; attackerId: string }>) => boolean
@@ -35,6 +35,10 @@ interface GameStore {
   keepHand: () => void
   putCardsOnBottom: (playerId: string, cardIds: string[]) => void
   resolveScry: (triggerId: string, topCards: string[], bottomCards: string[]) => void
+
+  // Spell targeting helpers
+  spellRequiresTargets: (cardInstanceId: string) => boolean
+  getValidTargetsForSpell: (cardInstanceId: string) => string[]
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -129,11 +133,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return success
   },
 
-  castSpell: (playerId, cardInstanceId, xValue = 0) => {
+  castSpell: (playerId, cardInstanceId, xValue = 0, targets = []) => {
     const { gameState } = get()
     if (!gameState) return false
 
-    const success = actions.castSpell(gameState, playerId, cardInstanceId, xValue)
+    const success = actions.castSpell(gameState, playerId, cardInstanceId, xValue, targets)
     if (success) {
       set({ gameState: { ...gameState } })
     }
@@ -368,8 +372,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
     
     trigger.resolved = true
     gameState.triggerQueue = gameState.triggerQueue.filter((t) => !t.resolved)
-    
+
     console.log(`[SCRY] Reordered library: ${topCards.length} to top, ${bottomCards.length} to bottom`)
     set({ gameState: { ...gameState } })
+  },
+
+  spellRequiresTargets: (cardInstanceId) => {
+    const { gameState } = get()
+    if (!gameState) return false
+
+    const card = gameState.entities[cardInstanceId]
+    if (!card) return false
+
+    return actions.spellRequiresTargets(card)
+  },
+
+  getValidTargetsForSpell: (cardInstanceId) => {
+    const { gameState } = get()
+    if (!gameState) return []
+
+    const card = gameState.entities[cardInstanceId]
+    if (!card) return []
+
+    return actions.getValidTargetsForSpell(gameState, card)
   },
 }))

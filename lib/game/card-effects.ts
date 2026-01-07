@@ -117,6 +117,7 @@ export function parseETBCounters(oracleText: string, cardName: string): {
 
 /**
  * Apply ETB counter effects when a creature enters the battlefield
+ * This includes both inherent ETB counters and replacement effects like Tromell
  */
 export function applyETBCounters(
   gameState: GameState,
@@ -126,29 +127,41 @@ export function applyETBCounters(
   const result = parseETBCounters(card.oracleText || "", card.name)
   const { counterType, amount, requiresChoice } = result
 
-  if (!counterType || amount === 0) return
+  // Check for Tromell bonus (applies to all nontoken creatures)
+  const isCreature = card.typeLine.toLowerCase().includes("creature")
+  const tromellBonus = isCreature ? getTromellBonus(gameState, card.controllerId, card) : 0
+
+  // If no inherent counters and no Tromell bonus, exit early
+  if ((!counterType || amount === 0) && tromellBonus === 0) return
 
   // Log if this card requires player choice but we're auto-resolving
   if (requiresChoice) {
     console.log(`[ETB] ${card.name} requires player choice - auto-resolving with 0 bonus counters`)
   }
 
-  const finalAmount = amount === "X" ? xValue : amount
+  // Calculate base counters from the card itself
+  const baseAmount = amount === "X" ? xValue : (amount || 0)
 
   // Apply Hardened Scales replacement effect if controller has it
-  const controller = gameState.players[card.controllerId]
   const hardenedScalesMultiplier = getHardenedScalesMultiplier(gameState, card.controllerId)
 
-  const countersToAdd = counterType === "p1p1" ? finalAmount * hardenedScalesMultiplier : finalAmount
+  // Calculate total counters: (base + Tromell) * Hardened Scales
+  const totalBeforeScale = baseAmount + tromellBonus
+  const countersToAdd = totalBeforeScale * hardenedScalesMultiplier
 
-  console.log(
-    `[ETB] ${card.name} enters with ${countersToAdd} ${counterType} counters (base: ${finalAmount}, multiplier: ${hardenedScalesMultiplier})`,
-  )
+  // Use p1p1 as the counter type if we only have Tromell bonus
+  const finalCounterType = counterType || "p1p1"
 
-  card.counters[counterType] += countersToAdd
+  if (countersToAdd > 0) {
+    console.log(
+      `[ETB] ${card.name} enters with ${countersToAdd} ${finalCounterType} counters (base: ${baseAmount}, Tromell: ${tromellBonus}, multiplier: ${hardenedScalesMultiplier})`,
+    )
+
+    card.counters[finalCounterType] += countersToAdd
+  }
 
   // Update power/toughness for creatures with +1/+1 counters
-  if (counterType === "p1p1" && card.power && card.toughness) {
+  if (finalCounterType === "p1p1" && card.power && card.toughness) {
     const basePower = parseInt(card.power) || 0
     const baseToughness = parseInt(card.toughness) || 0
     // Note: In a real implementation, we'd track base stats separately
@@ -198,6 +211,31 @@ function getHardenedScalesMultiplier(gameState: GameState, playerId: string): nu
   }
 
   return multiplier
+}
+
+/**
+ * Check if controller has Tromell and return bonus counters
+ * Tromell: "Each other nontoken creature you control enters with an additional +1/+1 counter on it."
+ */
+function getTromellBonus(gameState: GameState, playerId: string, enteringCard: CardInstance): number {
+  let bonus = 0
+
+  // Check all creatures on battlefield controlled by player
+  for (const cardId of gameState.battlefield) {
+    const card = gameState.entities[cardId]
+    if (
+      card.controllerId === playerId &&
+      card.name === "Tromell, Seymour's Butler" &&
+      card.zone === "BATTLEFIELD"
+    ) {
+      // Tromell only affects OTHER nontoken creatures
+      if (!enteringCard.isToken && card.instanceId !== enteringCard.instanceId) {
+        bonus += 1
+      }
+    }
+  }
+
+  return bonus
 }
 
 /**

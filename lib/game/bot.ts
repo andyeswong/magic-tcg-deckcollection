@@ -242,7 +242,26 @@ export class SimpleBot {
         xValue = Math.floor(totalMana / 2)
       }
 
-      const success = actions.castSpell(gameState, this.botPlayerId, cardId, xValue)
+      // Check if spell requires targets
+      let targets: string[] = []
+      if (actions.spellRequiresTargets(card)) {
+        const validTargets = actions.getValidTargetsForSpell(gameState, card)
+
+        // Bot strategy: select targets from valid targets
+        // For now, just select up to the maximum needed
+        const { parseSpellEffect } = require("./spell-parser")
+        const effects = parseSpellEffect(card.oracleText || "", card.name)
+
+        for (const effect of effects) {
+          if (effect.type === "add_counters" && effect.counters?.targetCount) {
+            const maxTargets = effect.counters.targetCount
+            targets = validTargets.slice(0, Math.min(maxTargets, validTargets.length))
+            console.log(`[BOT] Selected ${targets.length} target(s) for ${card.name}`)
+          }
+        }
+      }
+
+      const success = actions.castSpell(gameState, this.botPlayerId, cardId, xValue, targets)
       if (success) {
         // Bot automatically passes priority after casting
         // This allows the spell to resolve (or opponent to respond)

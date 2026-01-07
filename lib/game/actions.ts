@@ -1,6 +1,7 @@
 import type { GameState, CardInstance, Phase } from "./types"
 import { applyETBCounters, parseTriggeredAbilities, getCurrentStats, registerTrigger, resolveTriggers, hasKeyword, parseActivatedAbilities, checkEntersTapped, type ActivatedAbility } from "./card-effects"
 import { addGameLog } from "./logger"
+import { parseSpellEffect } from "./spell-parser"
 
 // Helper: Get next phase
 export function getNextPhase(currentPhase: Phase): Phase {
@@ -35,6 +36,53 @@ export function isInteractivePhase(phase: Phase): boolean {
   const result = interactivePhases.includes(phase)
   console.log(`[PHASE] Is ${phase} interactive? ${result}`)
   return result
+}
+
+// Helper: Check if a spell requires targets
+export function spellRequiresTargets(card: CardInstance): boolean {
+  const effects = parseSpellEffect(card.oracleText || "", card.name)
+
+  for (const effect of effects) {
+    // Check for target counters
+    if (effect.type === "add_counters" && effect.counters) {
+      if (effect.counters.targetCount && effect.counters.targetCount > 0) {
+        return true
+      }
+    }
+    // Check for targeted destroy effects
+    if (effect.type === "destroy_creatures" && effect.destroy && !effect.destroy.all) {
+      return true
+    }
+    // Check for targeted exile effects
+    if (effect.type === "exile_permanents" && effect.exile && !effect.exile.all) {
+      return true
+    }
+  }
+
+  return false
+}
+
+// Helper: Get valid targets for a spell
+export function getValidTargetsForSpell(gameState: GameState, card: CardInstance): string[] {
+  const effects = parseSpellEffect(card.oracleText || "", card.name)
+  const validTargets: string[] = []
+
+  for (const effect of effects) {
+    if (effect.type === "add_counters" && effect.counters) {
+      const targetType = effect.counters.targetType || "creature"
+
+      // Get all creatures on battlefield
+      for (const cardId of gameState.battlefield) {
+        const targetCard = gameState.entities[cardId]
+        if (targetCard.typeLine.toLowerCase().includes(targetType)) {
+          validTargets.push(cardId)
+        }
+      }
+    }
+    // Add more target types as needed
+  }
+
+  return validTargets
 }
 
 // Action: Draw a card
@@ -360,6 +408,7 @@ export function castSpell(
   playerId: string,
   cardInstanceId: string,
   xValue: number = 0,
+  targets: string[] = [],
 ): boolean {
   const player = gameState.players[playerId]
   const card = gameState.entities[cardInstanceId]
@@ -388,7 +437,7 @@ export function castSpell(
   })
 
   // Put spell on the stack
-  putSpellOnStack(gameState, cardInstanceId, playerId, xValue)
+  putSpellOnStack(gameState, cardInstanceId, playerId, xValue, targets)
 
   // Caster retains priority (can respond to their own spell)
   gameState.turnState.waitingForPriority = true
@@ -406,6 +455,7 @@ export function putSpellOnStack(
   cardInstanceId: string,
   controllerId: string,
   xValue: number = 0,
+  targets: string[] = [],
 ): void {
   const card = gameState.entities[cardInstanceId]
   const stackItem: import("./types").StackItem = {
@@ -414,13 +464,13 @@ export function putSpellOnStack(
     cardInstanceId,
     cardName: card.name,
     controllerId,
-    targets: [], // TODO: Add target selection
+    targets,
     xValue,
     manaCost: card.manaCost,
   }
 
   gameState.turnState.stack.push(stackItem)
-  console.log(`[STACK] ${card.name} added to stack (${gameState.turnState.stack.length} items)`)
+  console.log(`[STACK] ${card.name} added to stack (${gameState.turnState.stack.length} items) with ${targets.length} target(s)`)
 }
 
 // Pass priority to the next player
@@ -502,7 +552,7 @@ export function resolveTopOfStack(gameState: GameState): void {
 
     } else {
       // Instant/Sorcery - execute effect and move to graveyard
-      executeSpellEffect(gameState, card, stackItem.xValue)
+      executeSpellEffect(gameState, card, stackItem.xValue, undefined, stackItem.targets)
       controller.graveyard.push(stackItem.cardInstanceId)
       card.zone = "GRAVEYARD"
     }
