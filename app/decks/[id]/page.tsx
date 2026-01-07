@@ -9,6 +9,7 @@ import type { DeckCard } from "@/lib/types"
 import { DeckView } from "@/components/deck-view"
 import { DeckStatistics } from "@/components/deck-statistics"
 import { DeckActions } from "@/components/deck-actions"
+import { ChangeCommanderButton } from "@/components/change-commander-button"
 
 export default async function DeckDetailPage({
   params,
@@ -108,7 +109,10 @@ export default async function DeckDetailPage({
                   className="w-full rounded-lg mb-2"
                 />
               )}
-              <p className="font-semibold">{deck.commander_name}</p>
+              <div className="space-y-2">
+                <p className="font-semibold">{deck.commander_name}</p>
+                <ChangeCommanderButton deckId={id} currentCommander={deck.commander_name} />
+              </div>
             </CardContent>
           </Card>
         </div>

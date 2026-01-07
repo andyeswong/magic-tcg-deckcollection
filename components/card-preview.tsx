@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { createPortal } from "react-dom"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import type { CardInstance } from "@/lib/game/types"
@@ -9,9 +10,10 @@ import { ManaSymbols } from "@/components/mana-symbols"
 interface CardPreviewProps {
   card: CardInstance
   children: React.ReactNode
+  showAbove?: boolean // Show preview above the card instead of below
 }
 
-export function CardPreview({ card, children }: CardPreviewProps) {
+export function CardPreview({ card, children, showAbove = false }: CardPreviewProps) {
   const [showPreview, setShowPreview] = useState(false)
   const [position, setPosition] = useState({ x: 0, y: 0 })
 
@@ -29,10 +31,13 @@ export function CardPreview({ card, children }: CardPreviewProps) {
   }
 
   const updatePosition = (e: React.MouseEvent) => {
-    const offset = 20
+    const offsetX = 20
+    const offsetY = 10
+    const previewWidth = 320 // Width of the preview card (w-80 = 320px)
+
     setPosition({
-      x: e.clientX + offset,
-      y: e.clientY + offset,
+      x: showAbove ? e.clientX - previewWidth / 2 : e.clientX + offsetX,
+      y: showAbove ? 10 : e.clientY + offsetY,
     })
   }
 
@@ -42,7 +47,7 @@ export function CardPreview({ card, children }: CardPreviewProps) {
         {children}
       </div>
 
-      {showPreview && (
+      {showPreview && typeof document !== 'undefined' && createPortal(
         <div
           className="fixed z-[9999] pointer-events-none"
           style={{
@@ -50,7 +55,7 @@ export function CardPreview({ card, children }: CardPreviewProps) {
             top: `${position.y}px`,
           }}
         >
-          <Card className="w-80 bg-black/95 border-primary/50 shadow-2xl">
+          <Card className="w-80 bg-black/95 backdrop-blur-lg border-primary/50 shadow-2xl">
             <CardContent className="p-4 space-y-3">
               {/* Card Image */}
               {card.imageUrl && (
@@ -111,7 +116,8 @@ export function CardPreview({ card, children }: CardPreviewProps) {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )

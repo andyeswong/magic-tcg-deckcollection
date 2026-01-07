@@ -41,6 +41,8 @@ export interface Counters {
   loyalty: number
   charge: number
   poison: number
+  shield: number // Shield counters prevent next damage/destroy
+  vow: number // Vow counters prevent attacking the controller who put them
 }
 
 export interface TemporaryModifier {
@@ -77,6 +79,7 @@ export interface CardInstance {
   tapped: boolean
   faceDown: boolean
   summoningSick: boolean
+  isToken: boolean // If true, this is a token (exiles when leaving battlefield)
   attachedTo?: string // For Equipment/Auras (references another instanceId)
 
   // Mutable stats
@@ -100,6 +103,8 @@ export interface PlayerState {
   manaPool: ManaPool
   flags: PlayerFlags
   commanderTax: number // How many times commander has been cast (adds {2} per cast)
+  pendingDiscards: number // Number of cards player needs to discard (for hand size limit)
+  mulliganCount: number // Number of mulligans taken (affects starting hand size)
 
   // Player-specific zones (IDs referencing CardInstances)
   hand: string[]
@@ -115,6 +120,37 @@ export interface CombatState {
     blocked: boolean
     blockers: string[]
   }[]
+}
+
+// Phase 2: Triggered Abilities
+export interface PendingTrigger {
+  id: string // unique trigger ID
+  sourceCardId: string // card that triggered the ability
+  controllerId: string // player who controls the trigger
+  trigger: "etb" | "attack" | "damage" | "cast" | "dies" | "counter_added"
+  effect: string // effect identifier (e.g., "add_counter_target", "draw_card", "proliferate")
+  requiresTarget: boolean
+  validTargets?: string[] // card instance IDs that can be targeted
+  amount?: number // for effects that add counters
+  resolved: boolean
+  // Phase 3: Proliferate-specific fields
+  proliferateTargets?: string[] // selected card/player IDs to proliferate
+}
+
+// Game Log Entry
+export interface GameLogEntry {
+  id: string
+  timestamp: number
+  turnNumber: number
+  phase: Phase
+  playerId: string
+  playerName: string
+  action: string
+  cardName?: string
+  cardText?: string
+  targetName?: string
+  details?: string
+  type: "action" | "trigger" | "combat" | "phase" | "effect"
 }
 
 export interface GameConfig {
@@ -136,10 +172,12 @@ export interface GameState {
   // Turn structure
   turnState: {
     activePlayerId: string
-    priorityPlayerId: string
+    priorityPlayerId: string // Player who currently has priority
     turnNumber: number
     phase: Phase
     stack: StackItem[]
+    waitingForPriority: boolean // True when waiting for player to pass priority or respond
+    priorityPasses: number // Track consecutive passes (when all players pass, stack resolves)
   }
 
   // Players
@@ -154,6 +192,12 @@ export interface GameState {
 
   // Combat
   combat?: CombatState
+
+  // Phase 2: Triggered Abilities
+  triggerQueue: PendingTrigger[]
+
+  // Game Log
+  gameLog: GameLogEntry[]
 
   // Game status
   status: "SETUP" | "PLAYING" | "ENDED"
@@ -189,10 +233,13 @@ export interface GameAction {
 export interface StackItem {
   id: string
   type: "SPELL" | "ABILITY"
-  cardInstanceId?: string
+  cardInstanceId?: string // Reference to the card being cast (for spells)
+  cardName: string // Name of the card/ability
   controllerId: string
-  targets: string[]
-  effect?: any
+  targets: string[] // Target card/player IDs
+  effect?: any // Specific effect data (for abilities)
+  xValue?: number // For X spells
+  manaCost?: string // Mana cost paid
 }
 
 // Helper types for deck initialization
@@ -221,5 +268,15 @@ export interface DeckData {
   name: string
   commander_name: string
   commander_image_url: string
+  commander_card_id: string
+  commander_mana_cost?: string
+  commander_type_line?: string
+  commander_cmc?: number
+  commander_power?: string
+  commander_toughness?: string
+  commander_colors?: string[]
+  commander_color_identity?: string[]
+  commander_keywords?: string[]
+  commander_oracle_text?: string
   user_id: string
 }

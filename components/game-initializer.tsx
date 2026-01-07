@@ -18,7 +18,7 @@ interface GameInitializerProps {
 }
 
 export function GameInitializer({ deckData, deckCards, userId, userName }: GameInitializerProps) {
-  const { gameState, initGame, startGame } = useGameStore()
+  const { gameState, initGame } = useGameStore()
   const router = useRouter()
 
   // Initialize game on mount if not already initialized
@@ -28,12 +28,8 @@ export function GameInitializer({ deckData, deckCards, userId, userName }: GameI
     }
   }, [deckData.id])
 
-  const handleStartGame = () => {
-    startGame()
-  }
-
-  // Show start screen if game not started
-  if (!gameState || gameState.status === "SETUP") {
+  // Show start screen if game not initialized yet
+  if (!gameState) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 p-4">
         <div className="max-w-3xl mx-auto mt-20">
@@ -46,7 +42,7 @@ export function GameInitializer({ deckData, deckCards, userId, userName }: GameI
 
           <Card className="bg-black/50 border-primary/50">
             <CardHeader>
-              <CardTitle className="text-3xl text-white text-center">Ready to Play?</CardTitle>
+              <CardTitle className="text-3xl text-white text-center">Loading Game...</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="text-center space-y-4">
@@ -79,11 +75,6 @@ export function GameInitializer({ deckData, deckCards, userId, userName }: GameI
                     The bot will play with the same deck and make simple strategic decisions.
                   </p>
                 </div>
-
-                <Button onClick={handleStartGame} size="lg" className="w-full mt-6">
-                  <Play className="mr-2 h-5 w-5" />
-                  Start Game
-                </Button>
               </div>
             </CardContent>
           </Card>

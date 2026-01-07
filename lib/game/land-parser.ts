@@ -1,7 +1,12 @@
-import type { ManaColor } from "./types"
+import type { ManaColor, GameState } from "./types"
 
 // Parse oracle text to determine what mana a land can produce
-export function parseLandManaOptions(oracleText: string, name: string): ManaColor[] {
+export function parseLandManaOptions(
+  oracleText: string,
+  name: string,
+  gameState?: GameState,
+  playerId?: string,
+): ManaColor[] {
   const options: ManaColor[] = []
 
   // Basic lands
@@ -10,6 +15,26 @@ export function parseLandManaOptions(oracleText: string, name: string): ManaColo
   if (name.includes("Swamp")) return ["B"]
   if (name.includes("Mountain")) return ["R"]
   if (name.includes("Forest")) return ["G"]
+
+  // Command Tower and similar lands that say "any color"
+  if (oracleText?.toLowerCase().includes("any color")) {
+    // If we have gameState and playerId, filter by commander's color identity
+    if (gameState && playerId) {
+      const player = gameState.players[playerId]
+      const commanderId = player.commandZone[0]
+      if (commanderId) {
+        const commander = gameState.entities[commanderId]
+        const commanderColors = commander.colorIdentity?.filter((c) =>
+          ["W", "U", "B", "R", "G"].includes(c),
+        ) as ManaColor[]
+        if (commanderColors && commanderColors.length > 0) {
+          return commanderColors
+        }
+      }
+    }
+    // Fallback to all five colors if commander not found
+    return ["W", "U", "B", "R", "G"]
+  }
 
   // Parse oracle text for mana abilities with choices (contains "or")
   // Look for patterns like "{T}: Add {G} or {W}"
@@ -60,6 +85,11 @@ export function isDualLand(oracleText: string, name: string): boolean {
     name.includes("Forest")
   ) {
     return false
+  }
+
+  // Command Tower and similar lands that say "any color" are dual lands
+  if (oracleText?.toLowerCase().includes("any color")) {
+    return true
   }
 
   // Check if oracle text has a choice ability (contains "or")

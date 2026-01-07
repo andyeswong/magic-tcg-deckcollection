@@ -63,8 +63,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Cards array required" }, { status: 400 })
     }
 
+    console.log("[UPSERT] Received cards:", JSON.stringify(cards, null, 2))
+
     // Normalize all cards
     const normalizedCards = cards.map(normalizeCardData)
+
+    console.log("[UPSERT] Normalized cards:", JSON.stringify(normalizedCards, null, 2))
 
     // Upsert cards into the database
     const { data, error } = await supabase.from("cards").upsert(normalizedCards, {

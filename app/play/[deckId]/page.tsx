@@ -30,6 +30,13 @@ export default async function PlayGamePage({
     notFound()
   }
 
+  // Fetch commander card data
+  const { data: commanderCard } = await supabase
+    .from("cards")
+    .select("mana_cost, type_line, cmc, power, toughness, colors, color_identity, keywords, oracle_text")
+    .eq("id", deck.commander_card_id)
+    .single()
+
   // Fetch deck cards with full card data
   const { data: deckCards } = await supabase
     .from("deck_cards")
@@ -84,6 +91,16 @@ export default async function PlayGamePage({
         name: deck.name,
         commander_name: deck.commander_name,
         commander_image_url: deck.commander_image_url,
+        commander_card_id: deck.commander_card_id,
+        commander_mana_cost: commanderCard?.mana_cost || "",
+        commander_type_line: commanderCard?.type_line || "Legendary Creature",
+        commander_cmc: commanderCard?.cmc || 0,
+        commander_power: commanderCard?.power || "",
+        commander_toughness: commanderCard?.toughness || "",
+        commander_colors: commanderCard?.colors || [],
+        commander_color_identity: commanderCard?.color_identity || [],
+        commander_keywords: commanderCard?.keywords || [],
+        commander_oracle_text: commanderCard?.oracle_text || "",
         user_id: deck.user_id,
       }}
       deckCards={cardsWithData}

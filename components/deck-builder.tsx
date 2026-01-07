@@ -15,7 +15,7 @@ interface DeckBuilderProps {
 }
 
 export function DeckBuilder({ deckId, initialDeck, initialCards }: DeckBuilderProps) {
-  const [deck] = useState(initialDeck)
+  const [deck, setDeck] = useState(initialDeck)
   const [deckCards, setDeckCards] = useState(initialCards)
   const [recentCards, setRecentCards] = useState<any[]>([])
 

@@ -16,7 +16,7 @@ function createEmptyManaPool(): ManaPool {
 
 // Initialize empty counters
 function createEmptyCounters(): Counters {
-  return { p1p1: 0, loyalty: 0, charge: 0, poison: 0 }
+  return { p1p1: 0, loyalty: 0, charge: 0, poison: 0, shield: 0, vow: 0 }
 }
 
 // Create a card instance from deck card data
@@ -27,6 +27,12 @@ function createCardInstance(
 ): CardInstance {
   const cardData = deckCard.cards || {}
 
+  // Ensure mana_cost is set - log warning if missing
+  const manaCost = deckCard.mana_cost || ""
+  if (!manaCost && deckCard.card_name) {
+    console.warn(`[INIT] Card "${deckCard.card_name}" has no mana_cost in database. Please re-add this card to your deck.`)
+  }
+
   return {
     instanceId: uuidv4(),
     ownerId,
@@ -35,7 +41,7 @@ function createCardInstance(
 
     // Static data
     name: deckCard.card_name,
-    manaCost: deckCard.mana_cost || "",
+    manaCost: manaCost,
     cmc: cardData.cmc || 0,
     types: deckCard.type_line?.split("—")[0]?.trim().split(" ") || [],
     typeLine: deckCard.type_line || "",
@@ -51,8 +57,7 @@ function createCardInstance(
     zone: isCommander ? "COMMAND" : "LIBRARY",
     tapped: false,
     faceDown: false,
-    summoningSick: false,
-
+    summoningSick: false,    isToken: false,
     // Mutable stats
     counters: createEmptyCounters(),
     temporaryModifiers: [],
@@ -85,6 +90,8 @@ function createPlayerState(playerId: string, playerName: string): PlayerState {
       canCastSorcery: false,
     },
     commanderTax: 0,
+    pendingDiscards: 0,
+    mulliganCount: 0,
     hand: [],
     library: [],
     graveyard: [],
@@ -111,13 +118,22 @@ export function initializeGame(
   // Create commander instance
   const commanderInstance = createCardInstance(
     {
-      card_id: deckData.id + "-commander",
+      card_id: deckData.commander_card_id || deckData.id + "-commander",
       card_name: deckData.commander_name,
-      mana_cost: "",
-      type_line: "Legendary Creature",
+      mana_cost: deckData.commander_mana_cost || "",
+      type_line: deckData.commander_type_line || "Legendary Creature",
       card_image_url: deckData.commander_image_url,
       quantity: 1,
       source: "deck",
+      cards: {
+        cmc: deckData.commander_cmc || 0,
+        colors: deckData.commander_colors || [],
+        color_identity: deckData.commander_color_identity || [],
+        oracle_text: deckData.commander_oracle_text || "",
+        power: deckData.commander_power || "",
+        toughness: deckData.commander_toughness || "",
+        keywords: deckData.commander_keywords || [],
+      },
     },
     humanPlayerId,
     true,
@@ -145,13 +161,22 @@ export function initializeGame(
   // Bot commander
   const botCommanderInstance = createCardInstance(
     {
-      card_id: deckData.id + "-commander",
+      card_id: deckData.commander_card_id || deckData.id + "-commander",
       card_name: deckData.commander_name,
-      mana_cost: "",
-      type_line: "Legendary Creature",
+      mana_cost: deckData.commander_mana_cost || "",
+      type_line: deckData.commander_type_line || "Legendary Creature",
       card_image_url: deckData.commander_image_url,
       quantity: 1,
       source: "deck",
+      cards: {
+        cmc: deckData.commander_cmc || 0,
+        colors: deckData.commander_colors || [],
+        color_identity: deckData.commander_color_identity || [],
+        oracle_text: deckData.commander_oracle_text || "",
+        power: deckData.commander_power || "",
+        toughness: deckData.commander_toughness || "",
+        keywords: deckData.commander_keywords || [],
+      },
     },
     botPlayerId,
     true,
@@ -204,6 +229,8 @@ export function initializeGame(
       turnNumber: 1,
       phase: "UNTAP",
       stack: [],
+      waitingForPriority: false,
+      priorityPasses: 0,
     },
 
     players: {
@@ -215,31 +242,37 @@ export function initializeGame(
     battlefield: [],
     exile: [],
 
+    // Phase 2: Initialize trigger queue
+    triggerQueue: [],
+
+    // Game Log
+    gameLog: [],
+
     status: "SETUP",
   }
 
   return gameState
 }
 
-// Draw initial hand (7 cards)
+// Draw initial hand (7 cards, or less if mulligans taken)
 export function drawInitialHand(gameState: GameState, playerId: string): void {
   const player = gameState.players[playerId]
-  const handSize = 7
+  // First mulligan is free (still draw 7), subsequent mulligans draw 1 less card each
+  const handSize = Math.max(1, 7 - Math.max(0, player.mulliganCount - 1))
 
   for (let i = 0; i < handSize && player.library.length > 0; i++) {
     const cardId = player.library.pop()!
     player.hand.push(cardId)
     gameState.entities[cardId].zone = "HAND"
   }
+  
+  console.log(`[MULLIGAN] ${player.name} drew ${handSize} cards (mulligan count: ${player.mulliganCount})`)
 }
 
-// Start the game (draw initial hands and advance to first interactive phase)
+// Start the game (advance to first interactive phase without drawing cards)
 export function startGame(gameState: GameState): void {
   console.log(`[GAME] Starting game, initial phase: ${gameState.turnState.phase}`)
 
-  Object.keys(gameState.players).forEach((playerId) => {
-    drawInitialHand(gameState, playerId)
-  })
   gameState.status = "PLAYING"
 
   // Advance to the first interactive phase (MAIN_1)

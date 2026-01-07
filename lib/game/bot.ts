@@ -1,5 +1,6 @@
 import type { GameState, CardInstance } from "./types"
 import * as actions from "./actions"
+import { getCurrentStats, parseActivatedAbilities, hasKeyword } from "./card-effects"
 
 /**
  * Simple Bot AI for testing the game engine
@@ -37,7 +38,15 @@ export class SimpleBot {
       this.declareAttacks(gameState)
     }
   }
+  // Decision-making for opponent's turn (blocking)
+  makeDefensiveDecision(gameState: GameState): void {
+    const phase = gameState.turnState.phase
 
+    // Declare blockers when opponent attacks
+    if (phase === "DECLARE_BLOCKERS" && gameState.combat) {
+      this.declareBlocks(gameState)
+    }
+  }
   private playMainPhase(gameState: GameState): void {
     const botPlayer = gameState.players[this.botPlayerId]
 
@@ -47,7 +56,10 @@ export class SimpleBot {
     // Step 2: Tap lands for mana
     this.tapLandsForMana(gameState)
 
-    // Step 3: Cast spells (highest CMC first)
+    // Step 3: Activate useful abilities before casting spells
+    this.activateUsefulAbilities(gameState)
+
+    // Step 4: Cast spells (highest CMC first)
     this.castSpells(gameState, botPlayer)
   }
 
@@ -84,6 +96,117 @@ export class SimpleBot {
     })
   }
 
+  private activateUsefulAbilities(gameState: GameState): void {
+    // Find all bot permanents with activated abilities
+    const botPermanents = gameState.battlefield.filter((cardId) => {
+      const card = gameState.entities[cardId]
+      return card.controllerId === this.botPlayerId
+    })
+
+    for (const permanentId of botPermanents) {
+      const card = gameState.entities[permanentId]
+      const abilities = parseActivatedAbilities(card.oracleText || "", card.name)
+
+      for (let i = 0; i < abilities.length; i++) {
+        const ability = abilities[i]
+
+        // Strategy: Activate based on effect type
+        let shouldActivate = false
+        let targetCardId: string | undefined
+
+        switch (ability.effect) {
+          case "add_mana":
+            // Always activate mana abilities if we can
+            shouldActivate = !ability.cost.tap || !card.tapped
+            break
+
+          case "draw_card":
+            // Draw cards if we have mana to spare
+            const botPlayer = gameState.players[this.botPlayerId]
+            const totalMana =
+              botPlayer.manaPool.W +
+              botPlayer.manaPool.U +
+              botPlayer.manaPool.B +
+              botPlayer.manaPool.R +
+              botPlayer.manaPool.G +
+              botPlayer.manaPool.C
+            shouldActivate = totalMana >= 3 // Only if we have spare mana
+            break
+
+          case "deal_damage":
+            // Use damage abilities on opponent's biggest creature
+            if (ability.target === "creature" || ability.target === "target") {
+              const opponentId = Object.keys(gameState.players).find((id) => id !== this.botPlayerId)
+              if (opponentId) {
+                const opponentCreatures = gameState.battlefield.filter((id) => {
+                  const c = gameState.entities[id]
+                  return c.controllerId === opponentId && c.typeLine.toLowerCase().includes("creature")
+                })
+
+                if (opponentCreatures.length > 0) {
+                  // Target the biggest creature we can kill
+                  const damage = ability.amount || 0
+                  const killable = opponentCreatures.filter((id) => {
+                    const { toughness } = getCurrentStats(gameState.entities[id])
+                    return damage >= toughness
+                  })
+
+                  if (killable.length > 0) {
+                    // Target the highest power creature we can kill
+                    killable.sort((a, b) => {
+                      const { power: powerA } = getCurrentStats(gameState.entities[a])
+                      const { power: powerB } = getCurrentStats(gameState.entities[b])
+                      return powerB - powerA
+                    })
+                    targetCardId = killable[0]
+                    shouldActivate = true
+                  }
+                }
+              }
+            } else if (ability.target === "player") {
+              // Deal damage to opponent
+              const opponentId = Object.keys(gameState.players).find((id) => id !== this.botPlayerId)
+              targetCardId = opponentId
+              shouldActivate = true
+            }
+            break
+
+          case "add_counter":
+            // Add counters to our best creature
+            const botCreatures = gameState.battlefield.filter((id) => {
+              const c = gameState.entities[id]
+              return c.controllerId === this.botPlayerId && c.typeLine.toLowerCase().includes("creature")
+            })
+
+            if (botCreatures.length > 0) {
+              // Target creature with highest power
+              botCreatures.sort((a, b) => {
+                const { power: powerA } = getCurrentStats(gameState.entities[a])
+                const { power: powerB } = getCurrentStats(gameState.entities[b])
+                return powerB - powerA
+              })
+              targetCardId = botCreatures[0]
+              shouldActivate = true
+            }
+            break
+        }
+
+        if (shouldActivate) {
+          const success = actions.activateAbility(
+            gameState,
+            this.botPlayerId,
+            permanentId,
+            i,
+            targetCardId,
+          )
+          if (success) {
+            console.log(`[BOT] Activated ${ability.effect} ability on ${card.name}`)
+          }
+        }
+      }
+    }
+  }
+
   private castSpells(gameState: GameState, botPlayer: any): void {
     // Get all castable cards from hand
     const castableCards: Array<{ cardId: string; card: CardInstance }> = botPlayer.hand
@@ -103,9 +226,33 @@ export class SimpleBot {
     castableCards.sort((a, b) => b.card.cmc - a.card.cmc)
 
     // Cast spells until we run out of mana
-    for (const { cardId } of castableCards) {
-      const success = actions.castSpell(gameState, this.botPlayerId, cardId)
-      if (!success) break
+    for (const { cardId, card } of castableCards) {
+      // For X spells, calculate how much mana we can spend
+      let xValue = 0
+      if (card.manaCost.includes("{X}")) {
+        // Calculate available mana
+        const totalMana =
+          botPlayer.manaPool.W +
+          botPlayer.manaPool.U +
+          botPlayer.manaPool.B +
+          botPlayer.manaPool.R +
+          botPlayer.manaPool.G +
+          botPlayer.manaPool.C
+        // Spend half of available mana on X (simple strategy)
+        xValue = Math.floor(totalMana / 2)
+      }
+
+      const success = actions.castSpell(gameState, this.botPlayerId, cardId, xValue)
+      if (success) {
+        // Bot automatically passes priority after casting
+        // This allows the spell to resolve (or opponent to respond)
+        if (gameState.turnState.waitingForPriority && gameState.turnState.priorityPlayerId === this.botPlayerId) {
+          console.log(`[BOT] Auto-passing priority after casting ${card.name}`)
+          actions.passPriority(gameState)
+        }
+      } else {
+        break
+      }
     }
   }
 
@@ -117,12 +264,14 @@ export class SimpleBot {
     const attackers = gameState.battlefield
       .filter((cardId) => {
         const card = gameState.entities[cardId]
+        const { power } = getCurrentStats(card)
+        
         return (
           card.controllerId === this.botPlayerId &&
           card.typeLine.toLowerCase().includes("creature") &&
           !card.tapped &&
           !card.summoningSick &&
-          parseInt(card.power || "0") > 0
+          power > 0
         )
       })
       .map((attackerId) => ({
@@ -133,6 +282,89 @@ export class SimpleBot {
     if (attackers.length > 0) {
       actions.declareAttackers(gameState, this.botPlayerId, attackers)
     }
+  }
+
+  private declareBlocks(gameState: GameState): void {
+    if (!gameState.combat) return
+
+    // Find all creatures that can block
+    const availableBlockers = gameState.battlefield
+      .filter((cardId) => {
+        const card = gameState.entities[cardId]
+        return (
+          card.controllerId === this.botPlayerId &&
+          card.typeLine.toLowerCase().includes("creature") &&
+          !card.tapped
+        )
+      })
+
+    if (availableBlockers.length === 0) return
+
+    // Simple blocking strategy: Block biggest attackers first
+    const attackersSorted = [...gameState.combat.attackers]
+      .map((attack) => ({
+        ...attack,
+        power: getCurrentStats(gameState.entities[attack.attackerId]).power,
+      }))
+      .sort((a, b) => b.power - a.power)
+
+    const blocks: Array<{ blockerId: string; attackerId: string }> = []
+    const usedBlockers = new Set<string>()
+
+    for (const attack of attackersSorted) {
+      // Find a blocker that can block this attacker
+      const blocker = availableBlockers.find((blockerId) => {
+        if (usedBlockers.has(blockerId)) return false
+        const blockerCard = gameState.entities[blockerId]
+        const attackerCard = gameState.entities[attack.attackerId]
+        
+        // Check flying rules
+        const attackerHasFlying = attackerCard.keywords.includes("flying") || 
+          (attackerCard.oracleText?.toLowerCase().includes("flying") ?? false)
+        const blockerHasFlying = blockerCard.keywords.includes("flying") || 
+          (blockerCard.oracleText?.toLowerCase().includes("flying") ?? false)
+        const blockerHasReach = blockerCard.keywords.includes("reach") || 
+          (blockerCard.oracleText?.toLowerCase().includes("reach") ?? false)
+        
+        if (attackerHasFlying && !blockerHasFlying && !blockerHasReach) {
+          return false
+        }
+        
+        return true
+      })
+
+      if (blocker) {
+        blocks.push({ blockerId: blocker, attackerId: attack.attackerId })
+        usedBlockers.add(blocker)
+      }
+    }
+
+    if (blocks.length > 0) {
+      actions.declareBlockers(gameState, this.botPlayerId, blocks)
+      console.log(`[BOT] Declared ${blocks.length} blocker(s)`)
+    }
+  }
+
+  // Handle priority when bot has it
+  handlePriority(gameState: GameState): void {
+    const botPlayer = gameState.players[this.botPlayerId]
+
+    // Check if bot has any instants in hand
+    const instants = botPlayer.hand.filter((cardId) => {
+      const card = gameState.entities[cardId]
+      return card.typeLine.toLowerCase().includes("instant")
+    })
+
+    // Check if bot can afford to cast any instant
+    const castableInstants = instants.filter((cardId) => {
+      const card = gameState.entities[cardId]
+      return actions.canAffordManaCost(gameState, this.botPlayerId, card.manaCost)
+    })
+
+    // For now, bot doesn't cast instants in response (simple AI)
+    // Just pass priority
+    console.log(`[BOT] Bot has ${castableInstants.length} castable instant(s), passing priority`)
+    actions.passPriority(gameState)
   }
 
   // Auto-pass priority and advance phases
@@ -156,27 +388,55 @@ export class SimpleBot {
 // Helper function to run bot turn automatically
 export function executeBotTurn(gameState: GameState, botPlayerId: string): void {
   const bot = new SimpleBot(botPlayerId)
+  const phase = gameState.turnState.phase
 
-  // Execute actions for each relevant phase
-  const phasesToAct: Array<typeof gameState.turnState.phase> = [
-    "UNTAP",
-    "UPKEEP",
-    "DRAW",
-    "MAIN_1",
-    "COMBAT_BEGIN",
-    "DECLARE_ATTACKERS",
-    "DECLARE_BLOCKERS",
-    "COMBAT_DAMAGE",
-    "COMBAT_END",
-    "MAIN_2",
-    "END_STEP",
-    "CLEANUP",
-  ]
+  // Check if bot has priority and needs to respond
+  if (gameState.turnState.waitingForPriority && gameState.turnState.priorityPlayerId === botPlayerId) {
+    console.log("[BOT] Bot has priority, handling response")
+    bot.handlePriority(gameState)
+    return
+  }
 
-  let currentPhaseIndex = 0
-  while (currentPhaseIndex < phasesToAct.length && gameState.turnState.activePlayerId === botPlayerId) {
-    bot.makeDecision(gameState)
-    actions.advancePhase(gameState)
-    currentPhaseIndex++
+  // If it's bot's turn, execute normal turn actions
+  if (gameState.turnState.activePlayerId === botPlayerId) {
+    // Execute actions for each relevant phase
+    const phasesToAct: Array<typeof gameState.turnState.phase> = [
+      "UNTAP",
+      "UPKEEP",
+      "DRAW",
+      "MAIN_1",
+      "COMBAT_BEGIN",
+      "DECLARE_ATTACKERS",
+      "DECLARE_BLOCKERS",
+      "COMBAT_DAMAGE",
+      "COMBAT_END",
+      "MAIN_2",
+      "END_STEP",
+      "CLEANUP",
+    ]
+
+    let currentPhaseIndex = 0
+    while (currentPhaseIndex < phasesToAct.length && gameState.turnState.activePlayerId === botPlayerId) {
+      bot.makeDecision(gameState)
+
+      // If we just declared attackers and there are attackers, stop before DECLARE_BLOCKERS
+      // to let the human player declare blocks
+      if (gameState.turnState.phase === "DECLARE_ATTACKERS" && gameState.combat && gameState.combat.attackers.length > 0) {
+        actions.advancePhase(gameState) // Advance to DECLARE_BLOCKERS
+        console.log("[BOT] Stopping at DECLARE_BLOCKERS to let opponent declare blocks")
+        break // Stop here - let human player block
+      }
+
+      actions.advancePhase(gameState)
+      currentPhaseIndex++
+    }
+
+    // After bot's turn ends, auto-advance through non-interactive phases (UNTAP -> MAIN_1)
+    if (gameState.turnState.activePlayerId !== botPlayerId) {
+      actions.advanceToNextInteractivePhase(gameState)
+    }
+  } else {
+    // It's opponent's turn - bot may need to block
+    bot.makeDefensiveDecision(gameState)
   }
 }
