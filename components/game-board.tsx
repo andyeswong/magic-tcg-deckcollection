@@ -19,6 +19,7 @@ import { GameLogViewer } from "@/components/game-log-viewer"
 import { MulliganDialog } from "@/components/mulligan-dialog"
 import { MulliganScryDialog } from "@/components/mulligan-scry-dialog"
 import { ScryDialog } from "@/components/scry-dialog"
+import { AudioControls } from "@/components/audio-controls"
 import { useGameStore } from "@/lib/game/store"
 import { executeBotTurn } from "@/lib/game/bot"
 import { parseLandManaOptions, isDualLand } from "@/lib/game/land-parser"
@@ -26,6 +27,7 @@ import { parseActivatedAbilities } from "@/lib/game/card-effects"
 import { isCardPlayable, isLandPlayable } from "@/lib/game/helpers"
 import { parseSpellEffect } from "@/lib/game/spell-parser"
 import type { SpellEffect } from "@/lib/game/spell-parser"
+import { useSoundEffects } from "@/hooks/use-sound-effects"
 import { Play, SkipForward, Swords } from "lucide-react"
 import { toast } from "sonner"
 import type { ManaColor } from "@/lib/game/types"
@@ -56,6 +58,9 @@ export function GameBoard() {
     putCardsOnBottom,
     resolveScry,
   } = useGameStore()
+
+  // Initialize sound effects and music
+  useSoundEffects()
 
   const [selectedCard, setSelectedCard] = useState<string | null>(null)
   const [attackers, setAttackers] = useState<string[]>([])
@@ -413,9 +418,8 @@ export function GameBoard() {
     if (!modalSpellData) return
     const card = gameState.entities[modalSpellData.card]
 
-    // TODO: Cast spell with selected modes
-    // For now, just cast the spell (backend will need to be updated)
-    const success = castSpell(humanPlayerId, modalSpellData.card)
+    // Cast spell with selected modes
+    const success = castSpell(humanPlayerId, modalSpellData.card, 0, [], selectedModes)
     if (success) {
       toast.success(`${card.name} cast (${selectedModes.length} mode${selectedModes.length > 1 ? "s" : ""})`)
       setSelectedCard(null)
@@ -1021,6 +1025,9 @@ export function GameBoard() {
             <p className="text-sm text-white font-bold mb-2">Mana Pool</p>
             <ManaPoolDisplay manaPool={humanPlayer.manaPool} size="md" />
           </div>
+
+          {/* Audio Controls */}
+          <AudioControls compact className="bg-gray-900/50 backdrop-blur-md p-2 rounded-lg border border-gray-700" />
 
           {/* Separator */}
           <div className="border-t border-gray-600 my-2"></div>

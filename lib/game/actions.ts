@@ -409,6 +409,7 @@ export function castSpell(
   cardInstanceId: string,
   xValue: number = 0,
   targets: string[] = [],
+  selectedModes?: number[],
 ): boolean {
   const player = gameState.players[playerId]
   const card = gameState.entities[cardInstanceId]
@@ -437,7 +438,7 @@ export function castSpell(
   })
 
   // Put spell on the stack
-  putSpellOnStack(gameState, cardInstanceId, playerId, xValue, targets)
+  putSpellOnStack(gameState, cardInstanceId, playerId, xValue, targets, selectedModes)
 
   // Caster retains priority (can respond to their own spell)
   gameState.turnState.waitingForPriority = true
@@ -456,6 +457,7 @@ export function putSpellOnStack(
   controllerId: string,
   xValue: number = 0,
   targets: string[] = [],
+  selectedModes?: number[],
 ): void {
   const card = gameState.entities[cardInstanceId]
   const stackItem: import("./types").StackItem = {
@@ -467,10 +469,11 @@ export function putSpellOnStack(
     targets,
     xValue,
     manaCost: card.manaCost,
+    selectedModes,
   }
 
   gameState.turnState.stack.push(stackItem)
-  console.log(`[STACK] ${card.name} added to stack (${gameState.turnState.stack.length} items) with ${targets.length} target(s)`)
+  console.log(`[STACK] ${card.name} added to stack (${gameState.turnState.stack.length} items) with ${targets.length} target(s)${selectedModes ? `, ${selectedModes.length} mode(s)` : ""}`)
 }
 
 // Pass priority to the next player
@@ -552,7 +555,7 @@ export function resolveTopOfStack(gameState: GameState): void {
 
     } else {
       // Instant/Sorcery - execute effect and move to graveyard
-      executeSpellEffect(gameState, card, stackItem.xValue, undefined, stackItem.targets)
+      executeSpellEffect(gameState, card, stackItem.xValue, stackItem.selectedModes, stackItem.targets)
       controller.graveyard.push(stackItem.cardInstanceId)
       card.zone = "GRAVEYARD"
     }
@@ -712,6 +715,10 @@ function canBlock(blocker: CardInstance, attacker: CardInstance): boolean {
 export function dealCombatDamage(gameState: GameState): void {
   if (!gameState.combat) return
 
+  console.log(`[COMBAT-DEBUG] Starting combat damage resolution`)
+  console.log(`[COMBAT-DEBUG] Battlefield before combat:`, gameState.battlefield)
+  console.log(`[COMBAT-DEBUG] Number of attackers:`, gameState.combat.attackers.length)
+
   // Track creatures that need to die this turn
   const creaturesToDie: string[] = []
   const damageDealt: Record<string, number> = {} // Track damage on each creature
@@ -806,6 +813,7 @@ export function dealCombatDamage(gameState: GameState): void {
           // Check if blocker dies
           if (damageDealt[blockerId] >= blockerStats.toughness || hasDeathtouch) {
             if (!creaturesToDie.includes(blockerId)) {
+              console.log(`[COMBAT-DEBUG] Marking blocker ${blocker.name} (${blockerId}) to die - damage: ${damageDealt[blockerId]}, toughness: ${blockerStats.toughness}, deathtouch: ${hasDeathtouch}`)
               creaturesToDie.push(blockerId)
             }
           }
@@ -885,11 +893,15 @@ export function dealCombatDamage(gameState: GameState): void {
   processStrike("normal")
 
   // Move dead creatures to graveyard (or exile if tokens)
+  console.log(`[COMBAT-DEBUG] Processing ${creaturesToDie.length} creatures to die:`, creaturesToDie)
   for (const creatureId of creaturesToDie) {
     const creature = gameState.entities[creatureId]
+    console.log(`[COMBAT-DEBUG] Processing death for ${creatureId}: exists=${!!creature}, zone=${creature?.zone}`)
     if (creature && creature.zone === "BATTLEFIELD") {
       const controller = gameState.players[creature.controllerId]
+      console.log(`[COMBAT-DEBUG] Moving ${creature.name} (${creatureId}) from BATTLEFIELD to ${creature.isToken ? "EXILE" : "GRAVEYARD"}`)
       gameState.battlefield = gameState.battlefield.filter((id) => id !== creatureId)
+      console.log(`[COMBAT-DEBUG] Battlefield after removal:`, gameState.battlefield)
       
       if (creature.isToken) {
         // Tokens are exiled when they die, not put in graveyard
@@ -900,8 +912,13 @@ export function dealCombatDamage(gameState: GameState): void {
       } else {
         controller.graveyard.push(creatureId)
         creature.zone = "GRAVEYARD"
-        console.log(`[COMBAT] ${creature.name} died`)
+        console.log(`[COMBAT] ${creature.name} died - added to graveyard of ${controller.name}`)
+        console.log(`[COMBAT-DEBUG] Graveyard after:`, controller.graveyard)
       }
+    } else if (creature) {
+      console.log(`[COMBAT-DEBUG] WARNING: Creature ${creature.name} (${creatureId}) not on battlefield (zone: ${creature.zone})`)
+    } else {
+      console.log(`[COMBAT-DEBUG] WARNING: Creature ${creatureId} not found in entities`)
     }
   }
 
@@ -1177,8 +1194,10 @@ export function advancePhase(gameState: GameState): void {
   if (nextPhase === "UNTAP") {
     // Untap all permanents controlled by active player
     const activePlayerId = gameState.turnState.activePlayerId
+    console.log(`[PHASE-DEBUG] UNTAP phase - battlefield has ${gameState.battlefield.length} cards:`, gameState.battlefield)
     gameState.battlefield.forEach((cardId) => {
       const card = gameState.entities[cardId]
+      console.log(`[PHASE-DEBUG] Processing ${card.name} (${cardId}) - zone: ${card.zone}, controller: ${card.controllerId}`)
       if (card.controllerId === activePlayerId) {
         untapPermanent(gameState, cardId)
         card.summoningSick = false

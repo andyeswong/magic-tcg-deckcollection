@@ -3,6 +3,7 @@ import type { GameState, DeckData, DeckCardData } from "./types"
 import { initializeGame, startGame, drawInitialHand } from "./init"
 import * as actions from "./actions"
 import { resolveTriggerWithTarget, resolveProliferate, resolveSupport } from "./card-effects"
+import { soundManager } from "@/lib/sound-manager"
 
 interface GameStore {
   gameState: GameState | null
@@ -18,7 +19,7 @@ interface GameStore {
   tapPermanent: (cardInstanceId: string) => boolean
   untapPermanent: (cardInstanceId: string) => boolean
   addManaFromLand: (playerId: string, cardInstanceId: string, chosenColor?: string) => boolean
-  castSpell: (playerId: string, cardInstanceId: string, xValue?: number, targets?: string[]) => boolean
+  castSpell: (playerId: string, cardInstanceId: string, xValue?: number, targets?: string[], selectedModes?: number[]) => boolean
   castCommander: (playerId: string) => boolean
   declareAttackers: (playerId: string, attackers: Array<{ attackerId: string; targetId: string }>) => boolean
   declareBlockers: (playerId: string, blocks: Array<{ blockerId: string; attackerId: string }>) => boolean
@@ -75,6 +76,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!gameState) return
 
     actions.drawCard(gameState, playerId)
+    soundManager.playSound("draw")
     set({ gameState: { ...gameState } })
   },
 
@@ -95,6 +97,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const success = actions.playLand(gameState, playerId, cardInstanceId)
     if (success) {
+      soundManager.playSound("play-land")
       set({ gameState: { ...gameState } })
     }
     return success
@@ -128,17 +131,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const success = actions.addManaFromLand(gameState, playerId, cardInstanceId, chosenColor)
     if (success) {
+      soundManager.playSound("tap-land")
       set({ gameState: { ...gameState } })
     }
     return success
   },
 
-  castSpell: (playerId, cardInstanceId, xValue = 0, targets = []) => {
+  castSpell: (playerId, cardInstanceId, xValue = 0, targets = [], selectedModes) => {
     const { gameState } = get()
     if (!gameState) return false
 
-    const success = actions.castSpell(gameState, playerId, cardInstanceId, xValue, targets)
+    const card = gameState.entities[cardInstanceId]
+    const success = actions.castSpell(gameState, playerId, cardInstanceId, xValue, targets, selectedModes)
     if (success) {
+      // Play different sound for instants vs other spells
+      if (card?.typeLine.toLowerCase().includes("instant")) {
+        soundManager.playSound("instant")
+      } else {
+        soundManager.playSound("cast")
+      }
       set({ gameState: { ...gameState } })
     }
     return success
@@ -150,6 +161,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const success = actions.castCommander(gameState, playerId)
     if (success) {
+      soundManager.playSound("cast")
       set({ gameState: { ...gameState } })
     }
     return success
@@ -161,6 +173,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const success = actions.declareAttackers(gameState, playerId, attackers)
     if (success) {
+      if (attackers.length > 0) {
+        soundManager.playSound("attack")
+      }
       set({ gameState: { ...gameState } })
     }
     return success
@@ -172,6 +187,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const success = actions.declareBlockers(gameState, playerId, blocks)
     if (success) {
+      if (blocks.length > 0) {
+        soundManager.playSound("blocked")
+      }
       set({ gameState: { ...gameState } })
     }
     return success

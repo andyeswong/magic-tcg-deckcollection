@@ -370,17 +370,20 @@ function executeReturnFromGraveyard(context: SpellExecutionContext, effect: Spel
 }
 
 function executeModalSpell(context: SpellExecutionContext, effect: SpellEffect): void {
-  const { selectedModes } = context
+  const { spell, selectedModes } = context
 
   if (!effect.modal || !selectedModes || selectedModes.length === 0) {
-    console.log(`[SPELL] Modal spell executed with no modes selected`)
+    console.log(`[SPELL] ${spell.name}: Modal spell executed with no modes selected`)
     return
   }
+
+  console.log(`[SPELL] ${spell.name}: Executing ${selectedModes.length} selected mode(s):`, selectedModes)
 
   // Execute each selected mode
   selectedModes.forEach(modeIndex => {
     const mode = effect.modal!.modes[modeIndex]
     if (mode && mode.effect) {
+      console.log(`[SPELL] ${spell.name}: Executing mode ${modeIndex}: ${mode.description}`)
       executeSpellEffect(context, mode.effect)
     }
   })

@@ -240,6 +240,8 @@ export interface StackItem {
   effect?: any // Specific effect data (for abilities)
   xValue?: number // For X spells
   manaCost?: string // Mana cost paid
+  selectedModes?: number[] // For modal spells (indices of selected modes)
+  selectedCard?: string // For library search spells
 }
 
 // Helper types for deck initialization
