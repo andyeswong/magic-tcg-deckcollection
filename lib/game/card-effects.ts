@@ -124,6 +124,10 @@ export function applyETBCounters(
   card: CardInstance,
   xValue: number = 0,
 ): void {
+  // Note: This is fallback text parsing. JSON abilities are loaded asynchronously
+  // and will apply ETB effects when they finish loading. This ensures we don't
+  // miss any effects if JSON abilities aren't available yet.
+
   const result = parseETBCounters(card.oracleText || "", card.name)
   const { counterType, amount, requiresChoice } = result
 
@@ -997,7 +1001,20 @@ function createTokens(gameState: GameState, sourceCard: CardInstance, count: num
       summoningSick: true,
       isToken: true,
       
-      counters: { p1p1: 0, loyalty: 0, charge: 0, poison: 0 },
+      counters: {
+        p1p1: 0,
+        "-1-1": 0,
+        loyalty: 0,
+        charge: 0,
+        poison: 0,
+        stun: 0,
+        shield: 0,
+        vow: 0,
+        lore: 0,
+        indestructible: 0,
+        flying: 0,
+        first_strike: 0
+      },
       temporaryModifiers: [],
     }
     

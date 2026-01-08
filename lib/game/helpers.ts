@@ -26,7 +26,6 @@ export function isCardPlayable(
   // For other cards, check if can afford mana cost
   const canAfford = canAffordManaCost(gameState, playerId, card.manaCost)
   if (!canAfford) {
-    console.log(`[PLAYABLE] ${card.name} cannot afford mana cost`)
     return false
   }
 

@@ -14,9 +14,22 @@ function createEmptyManaPool(): ManaPool {
   return { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }
 }
 
-// Initialize empty counters
+// Initialize empty counters (v1.1 - all 12 counter types)
 function createEmptyCounters(): Counters {
-  return { p1p1: 0, loyalty: 0, charge: 0, poison: 0, shield: 0, vow: 0 }
+  return {
+    p1p1: 0,
+    "-1-1": 0,
+    loyalty: 0,
+    charge: 0,
+    poison: 0,
+    stun: 0,
+    shield: 0,
+    vow: 0,
+    lore: 0,
+    indestructible: 0,
+    flying: 0,
+    first_strike: 0
+  }
 }
 
 // Create a card instance from deck card data

@@ -1,5 +1,7 @@
 // Game Engine Type Definitions
 
+import type { RuntimeAbilityState } from './runtime-ability-state'
+
 export type Zone =
   | "HAND"
   | "LIBRARY"
@@ -38,11 +40,17 @@ export interface ManaPool {
 
 export interface Counters {
   p1p1: number
+  "-1-1": number        // -1/-1 counters (v1.1)
   loyalty: number
   charge: number
   poison: number
-  shield: number // Shield counters prevent next damage/destroy
-  vow: number // Vow counters prevent attacking the controller who put them
+  stun: number          // Stun counters prevent untapping (v1.1)
+  shield: number        // Shield counters prevent next damage/destroy
+  vow: number           // Vow counters prevent attacking the controller who put them
+  lore: number          // Lore counters for Sagas (v1.1)
+  indestructible: number // Indestructible counters grant indestructible (v1.1)
+  flying: number        // Flying counters grant flying (v1.1)
+  first_strike: number  // First strike counters grant first strike (v1.1)
 }
 
 export interface TemporaryModifier {
@@ -85,6 +93,9 @@ export interface CardInstance {
   // Mutable stats
   counters: Counters
   temporaryModifiers: TemporaryModifier[]
+
+  // Runtime ability state (v1.1 - tracks active abilities, granted effects, etc.)
+  runtimeAbilityState?: RuntimeAbilityState
 }
 
 export interface PlayerFlags {

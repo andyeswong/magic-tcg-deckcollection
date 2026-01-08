@@ -9,7 +9,8 @@
       "Bash(npm install:*)",
       "Bash(dir:*)",
       "Bash(findstr:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(grep:*)"
     ]
   }
 }

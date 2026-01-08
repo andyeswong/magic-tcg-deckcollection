@@ -150,6 +150,55 @@ export function playLand(gameState: GameState, playerId: string, cardInstanceId:
   gameState.battlefield.push(cardInstanceId)
   card.zone = "BATTLEFIELD"
 
+  // Initialize runtime ability state (v1.1)
+  const { initializeRuntimeState } = require("./runtime-state-manager")
+  const { loadAbilities } = require("./ability-loader")
+
+  // Load abilities and apply effects (async - doesn't block game flow)
+  loadAbilities(card.dbReferenceId).then(async abilityData => {
+    card.runtimeAbilityState = await initializeRuntimeState(card, abilityData || undefined)
+
+    if (abilityData) {
+      console.log(`[AbilitySystem] ${card.name} using JSON abilities from database`)
+
+      // Apply ETB replacement effects from JSON
+      if (abilityData.abilities.replacement) {
+        for (const replacement of abilityData.abilities.replacement) {
+          if (replacement.replaces === "etb" && replacement.effect.action === "add_counters") {
+            const amount = replacement.effect.counters?.amount || 0
+            const counterType = replacement.effect.counters?.type || "p1p1"
+            if (amount > 0) {
+              card.counters[counterType] += amount
+              console.log(`[AbilitySystem] Applied ETB replacement: ${card.name} enters with ${amount} ${counterType} counters`)
+            }
+          }
+        }
+      }
+
+      const abilities = []
+      if (card.runtimeAbilityState?.saga) {
+        abilities.push(`Saga (${card.runtimeAbilityState.saga.maxChapters} chapters)`)
+      }
+      if (card.runtimeAbilityState?.activeTriggeredAbilities.length > 0) {
+        abilities.push(`${card.runtimeAbilityState.activeTriggeredAbilities.length} triggered`)
+      }
+      if (card.runtimeAbilityState?.activeReplacements.length > 0) {
+        abilities.push(`${card.runtimeAbilityState.activeReplacements.length} replacement`)
+      }
+      if (abilities.length > 0) {
+        console.log(`[AbilitySystem] Initialized runtime state for ${card.name}: ${abilities.join(', ')}`)
+      }
+    } else {
+      console.log(`[AbilitySystem] ${card.name} has no JSON abilities - using text parsing fallback`)
+      // Apply fallback text parsing only if no JSON abilities
+      applyETBCounters(gameState, card, 0)
+    }
+  }).catch(err => {
+    console.error(`[AbilitySystem] Failed to initialize runtime state for ${card.name}:`, err)
+    // On error, use text parsing as fallback
+    applyETBCounters(gameState, card, 0)
+  })
+
   // Check if land enters tapped
   if (checkEntersTapped(card.oracleText || "", card.name)) {
     card.tapped = true
@@ -260,11 +309,6 @@ export function canAffordManaCost(gameState: GameState, playerId: string, manaCo
     }
   })
 
-  console.log(`[MANA] Checking cost ${manaCost}:`, {
-    required,
-    available: player.manaPool,
-  })
-
   // Check colored mana
   if (
     player.manaPool.W < required.W ||
@@ -273,7 +317,6 @@ export function canAffordManaCost(gameState: GameState, playerId: string, manaCo
     player.manaPool.R < required.R ||
     player.manaPool.G < required.G
   ) {
-    console.log(`[MANA] Failed colored mana check`)
     return false
   }
 
@@ -288,7 +331,6 @@ export function canAffordManaCost(gameState: GameState, playerId: string, manaCo
   const totalRequired = required.W + required.U + required.B + required.R + required.G + required.C + required.generic
 
   const canAfford = totalAvailable >= totalRequired
-  console.log(`[MANA] Total check: ${totalAvailable} >= ${totalRequired} = ${canAfford}`)
 
   return canAfford
 }
@@ -364,8 +406,6 @@ export function castCommander(gameState: GameState, playerId: string): boolean {
 
   // Calculate cost with tax
   const actualCost = calculateCommanderCost(commander.manaCost, player.commanderTax)
-  console.log(`[COMMANDER] Attempting to cast ${commander.name} - Base cost: ${commander.manaCost}, Tax: ${player.commanderTax}, Actual cost: ${actualCost}`)
-  console.log(`[COMMANDER] Current mana pool:`, player.manaPool)
 
   // Check if can afford
   if (!canAffordManaCost(gameState, playerId, actualCost)) {
@@ -373,12 +413,8 @@ export function castCommander(gameState: GameState, playerId: string): boolean {
     return false
   }
 
-  console.log(`[COMMANDER] Mana pool BEFORE spending:`, { ...player.manaPool })
-
   // Spend mana
   spendMana(gameState, playerId, actualCost)
-
-  console.log(`[COMMANDER] Mana pool AFTER spending:`, { ...player.manaPool })
 
   // Move from command zone to battlefield
   player.commandZone = player.commandZone.filter((id) => id !== commanderId)
@@ -386,8 +422,54 @@ export function castCommander(gameState: GameState, playerId: string): boolean {
   commander.zone = "BATTLEFIELD"
   commander.summoningSick = true
 
-  // Apply ETB counter effects
-  applyETBCounters(gameState, commander, 0)
+  // Initialize runtime ability state (v1.1)
+  const { initializeRuntimeState } = require("./runtime-state-manager")
+  const { loadAbilities } = require("./ability-loader")
+
+  // Load abilities and apply effects (async - doesn't block game flow)
+  loadAbilities(commander.dbReferenceId).then(async abilityData => {
+    commander.runtimeAbilityState = await initializeRuntimeState(commander, abilityData || undefined)
+
+    if (abilityData) {
+      console.log(`[AbilitySystem] ${commander.name} using JSON abilities from database`)
+
+      // Apply ETB replacement effects from JSON
+      if (abilityData.abilities.replacement) {
+        for (const replacement of abilityData.abilities.replacement) {
+          if (replacement.replaces === "etb" && replacement.effect.action === "add_counters") {
+            const amount = replacement.effect.counters?.amount || 0
+            const counterType = replacement.effect.counters?.type || "p1p1"
+            if (amount > 0) {
+              commander.counters[counterType] += amount
+              console.log(`[AbilitySystem] Applied ETB replacement: ${commander.name} enters with ${amount} ${counterType} counters`)
+            }
+          }
+        }
+      }
+
+      const abilities = []
+      if (commander.runtimeAbilityState?.saga) {
+        abilities.push(`Saga (${commander.runtimeAbilityState.saga.maxChapters} chapters)`)
+      }
+      if (commander.runtimeAbilityState?.activeTriggeredAbilities.length > 0) {
+        abilities.push(`${commander.runtimeAbilityState.activeTriggeredAbilities.length} triggered`)
+      }
+      if (commander.runtimeAbilityState?.activeReplacements.length > 0) {
+        abilities.push(`${commander.runtimeAbilityState.activeReplacements.length} replacement`)
+      }
+      if (abilities.length > 0) {
+        console.log(`[AbilitySystem] Initialized runtime state for ${commander.name}: ${abilities.join(', ')}`)
+      }
+    } else {
+      console.log(`[AbilitySystem] ${commander.name} has no JSON abilities - using text parsing fallback`)
+      // Apply fallback text parsing only if no JSON abilities
+      applyETBCounters(gameState, commander, 0)
+    }
+  }).catch(err => {
+    console.error(`[AbilitySystem] Failed to initialize runtime state for ${commander.name}:`, err)
+    // On error, use text parsing as fallback
+    applyETBCounters(gameState, commander, 0)
+  })
 
   // Increment commander tax
   player.commanderTax++
@@ -532,6 +614,72 @@ export function resolveTopOfStack(gameState: GameState): void {
       gameState.battlefield.push(stackItem.cardInstanceId)
       card.zone = "BATTLEFIELD"
 
+      // Initialize runtime ability state (v1.1)
+      const { initializeRuntimeState } = require("./runtime-state-manager")
+      const { loadAbilities } = require("./ability-loader")
+
+      // Load abilities and apply effects (async - doesn't block game flow)
+      loadAbilities(card.dbReferenceId).then(async abilityData => {
+        card.runtimeAbilityState = await initializeRuntimeState(card, abilityData || undefined)
+
+        if (abilityData) {
+          console.log(`[AbilitySystem] ${card.name} using JSON abilities from database`)
+
+          // Apply ETB replacement effects from JSON
+          if (abilityData.abilities.replacement) {
+            for (const replacement of abilityData.abilities.replacement) {
+              if (replacement.replaces === "etb" && replacement.effect.action === "add_counters") {
+                const amount = replacement.effect.counters?.amount || 0
+                const counterType = replacement.effect.counters?.type || "p1p1"
+                if (amount > 0) {
+                  card.counters[counterType] += amount
+                  console.log(`[AbilitySystem] Applied ETB replacement: ${card.name} enters with ${amount} ${counterType} counters`)
+                }
+              }
+            }
+          }
+
+          const abilities = []
+          if (card.runtimeAbilityState?.saga) {
+            abilities.push(`Saga (${card.runtimeAbilityState.saga.maxChapters} chapters)`)
+          }
+          if (card.runtimeAbilityState?.activeTriggeredAbilities.length > 0) {
+            abilities.push(`${card.runtimeAbilityState.activeTriggeredAbilities.length} triggered`)
+          }
+          if (card.runtimeAbilityState?.activeReplacements.length > 0) {
+            abilities.push(`${card.runtimeAbilityState.activeReplacements.length} replacement`)
+          }
+          if (abilities.length > 0) {
+            console.log(`[AbilitySystem] Initialized runtime state for ${card.name}: ${abilities.join(', ')}`)
+          }
+
+          // Register ETB triggers from JSON abilities
+          if (abilityData.abilities.triggered) {
+            for (const trigger of abilityData.abilities.triggered) {
+              if (trigger.trigger.event === "etb" || trigger.trigger.event === "self_etb") {
+                const triggers = parseTriggeredAbilities(card.oracleText || "", card.name)
+                registerTrigger(gameState, card, "etb", triggers)
+                console.log(`[AbilitySystem] Registered ETB triggers from JSON for ${card.name}`)
+                break // Only register once
+              }
+            }
+          }
+        } else {
+          console.log(`[AbilitySystem] ${card.name} has no JSON abilities - using text parsing fallback`)
+          // Apply fallback text parsing only if no JSON abilities
+          applyETBCounters(gameState, card, stackItem.xValue || 0)
+          // Register ETB triggered abilities from text parsing
+          const triggers = parseTriggeredAbilities(card.oracleText || "", card.name)
+          registerTrigger(gameState, card, "etb", triggers)
+        }
+      }).catch(err => {
+        console.error(`[AbilitySystem] Failed to initialize runtime state for ${card.name}:`, err)
+        // On error, use text parsing as fallback
+        applyETBCounters(gameState, card, stackItem.xValue || 0)
+        const triggers = parseTriggeredAbilities(card.oracleText || "", card.name)
+        registerTrigger(gameState, card, "etb", triggers)
+      })
+
       // Check if permanent enters tapped
       if (checkEntersTapped(card.oracleText || "", card.name)) {
         card.tapped = true
@@ -542,13 +690,6 @@ export function resolveTopOfStack(gameState: GameState): void {
       if (card.typeLine.toLowerCase().includes("creature")) {
         card.summoningSick = true
       }
-
-      // Apply ETB counter effects
-      applyETBCounters(gameState, card, stackItem.xValue || 0)
-
-      // Register ETB triggered abilities
-      const triggers = parseTriggeredAbilities(card.oracleText || "", card.name)
-      registerTrigger(gameState, card, "etb", triggers)
 
       // Attempt to auto-resolve triggers
       resolveTriggers(gameState)
@@ -984,7 +1125,6 @@ export function activateAbility(
 
   if (ability.cost.mana) {
     if (!canAffordManaCost(gameState, playerId, ability.cost.mana)) {
-      console.log(`[ABILITY] Cannot afford mana cost ${ability.cost.mana}`)
       return false
     }
   }
@@ -1095,7 +1235,6 @@ function executeAbilityEffect(
           else if (color === "G") player.manaPool.G++
           else if (color === "C") player.manaPool.C++
         })
-        console.log(`[ABILITY] ${sourceCard.name} added ${ability.manaToAdd.join('')} to mana pool`)
       }
       break
 
@@ -1192,14 +1331,20 @@ export function advancePhase(gameState: GameState): void {
 
   // Handle phase-specific actions
   if (nextPhase === "UNTAP") {
-    // Untap all permanents controlled by active player
+    // Untap all permanents controlled by active player (handle stun counters)
     const activePlayerId = gameState.turnState.activePlayerId
+    const { handleStunCounters } = require("./runtime-state-manager")
+
     console.log(`[PHASE-DEBUG] UNTAP phase - battlefield has ${gameState.battlefield.length} cards:`, gameState.battlefield)
     gameState.battlefield.forEach((cardId) => {
       const card = gameState.entities[cardId]
       console.log(`[PHASE-DEBUG] Processing ${card.name} (${cardId}) - zone: ${card.zone}, controller: ${card.controllerId}`)
       if (card.controllerId === activePlayerId) {
-        untapPermanent(gameState, cardId)
+        // Check stun counters BEFORE untapping
+        const canUntap = handleStunCounters(card)
+        if (canUntap) {
+          untapPermanent(gameState, cardId)
+        }
         card.summoningSick = false
       }
     })
@@ -1207,6 +1352,54 @@ export function advancePhase(gameState: GameState): void {
     // Empty mana pools
     Object.values(gameState.players).forEach((player) => {
       player.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }
+    })
+  }
+
+  if (nextPhase === "UPKEEP") {
+    // Progress Sagas for active player
+    const activePlayerId = gameState.turnState.activePlayerId
+    const { progressSagaChapter } = require("./runtime-state-manager")
+    const { loadAbilities } = require("./ability-loader")
+
+    // Find all Sagas controlled by active player
+    const sagas = gameState.battlefield
+      .map(id => gameState.entities[id])
+      .filter(card =>
+        card.controllerId === activePlayerId &&
+        card.runtimeAbilityState?.saga
+      )
+
+    // Progress each Saga (async handled outside or simplified)
+    sagas.forEach(async (saga) => {
+      const newChapter = progressSagaChapter(saga)
+
+      if (newChapter === null) {
+        // Saga is complete
+        console.log(`[Saga] ${saga.name} - Complete`)
+
+        // Load abilities to check if it's a creature
+        const abilities = await loadAbilities(saga.dbReferenceId)
+        if (!abilities?.abilities.saga?.isCreature) {
+          // Sacrifice non-creature Sagas
+          moveCardToZone(gameState, saga.instanceId, "GRAVEYARD")
+        }
+      } else {
+        console.log(`[Saga] ${saga.name} - Chapter ${newChapter}`)
+
+        // Load abilities and queue chapter trigger
+        const abilities = await loadAbilities(saga.dbReferenceId)
+        if (abilities) {
+          const chapter = abilities.abilities.saga?.chapters.find(ch =>
+            ch.chapterNumber.includes(newChapter)
+          )
+
+          if (chapter) {
+            // Register chapter trigger (simplified - would normally go to stack)
+            console.log(`[Saga] ${saga.name} - Chapter ${newChapter} effect queued`)
+            // TODO: Implement chapter effect execution
+          }
+        }
+      }
     })
   }
 
@@ -1229,7 +1422,23 @@ export function advancePhase(gameState: GameState): void {
     dealCombatDamage(gameState)
   }
 
+  if (nextPhase === "COMBAT_END") {
+    // Cleanup end-of-combat effects
+    const { cleanupExpiredEffects } = require("./runtime-state-manager")
+
+    Object.values(gameState.entities).forEach(card => {
+      cleanupExpiredEffects(card, "end_of_combat")
+    })
+  }
+
   if (nextPhase === "CLEANUP") {
+    // Cleanup end-of-turn effects (v1.1)
+    const { cleanupExpiredEffects } = require("./runtime-state-manager")
+
+    Object.values(gameState.entities).forEach(card => {
+      cleanupExpiredEffects(card, "end_of_turn")
+    })
+
     // Empty mana pools, remove temporary effects, etc.
     Object.values(gameState.players).forEach((player) => {
       player.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }
