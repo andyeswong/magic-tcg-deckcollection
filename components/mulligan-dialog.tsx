@@ -32,7 +32,7 @@ export function MulliganDialog({
 
   return (
     <Dialog open={open} onOpenChange={() => {}}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="">
         <DialogHeader>
           <DialogTitle>
             {mulliganCount === 0
@@ -57,7 +57,7 @@ export function MulliganDialog({
                     alt={card.name}
                     className="w-full rounded border-2 border-gray-300 hover:border-blue-500"
                   />
-                  <p className="text-xs text-center mt-1 truncate">{card.name}</p>
+                  <p className="text-center mt-1 truncate">{card.name}</p>
                 </div>
               </CardPreview>
             ))}

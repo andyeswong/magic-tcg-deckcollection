@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useGameStore } from "@/lib/game/store"
 import { GameBoard } from "@/components/game-board"
 import { Button } from "@/components/ui/button"
@@ -20,13 +20,30 @@ interface GameInitializerProps {
 export function GameInitializer({ deckData, deckCards, userId, userName }: GameInitializerProps) {
   const { gameState, initGame } = useGameStore()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const [initialized, setInitialized] = useState(false)
 
   // Initialize game on mount if not already initialized
   useEffect(() => {
-    if (!gameState || gameState.deckId !== deckData.id) {
-      initGame(deckData, deckCards, userId, userName)
+    if (initialized) {
+      console.log('[GAME-INITIALIZER] Already initialized, skipping')
+      return
     }
-  }, [deckData.id])
+    
+    if (!gameState || gameState.deckId !== deckData.id) {
+      // Read game options from URL parameters
+      const seed = searchParams.get('seed') || undefined
+      const devMode = searchParams.get('devMode') === 'true'
+      
+      console.log('[GAME-INITIALIZER] Read from URL params - seed:', seed, 'devMode:', devMode)
+      
+      // Initialize game with options
+      const options = (seed || devMode) ? { seed, devMode } : undefined
+      console.log('[GAME-INITIALIZER] Calling initGame with options:', options)
+      initGame(deckData, deckCards, userId, userName, options)
+      setInitialized(true)
+    }
+  }, [deckData.id, initialized, searchParams])
 
   // Show start screen if game not initialized yet
   if (!gameState) {

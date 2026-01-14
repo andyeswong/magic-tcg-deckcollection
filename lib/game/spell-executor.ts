@@ -22,6 +22,8 @@ export interface SpellExecutionContext {
  */
 export function executeSpellEffect(context: SpellExecutionContext, effect: SpellEffect): void {
   const { gameState, spell, controllerId } = context
+  
+  console.log(`[JSON-EFFECT] Executing effect for ${spell.name}:`, JSON.stringify(effect, null, 2))
 
   switch (effect.type) {
     case "search_library":
@@ -252,6 +254,9 @@ function executeAddCounters(context: SpellExecutionContext, effect: SpellEffect)
           break
         case "vow":
           card.counters.vow += counterCount
+          break
+        case "indestructible":
+          card.counters.indestructible += counterCount
           break
         case "loyalty":
           card.counters.loyalty += counterCount

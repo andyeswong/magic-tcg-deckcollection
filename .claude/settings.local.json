@@ -10,7 +10,12 @@
       "Bash(dir:*)",
       "Bash(findstr:*)",
       "Bash(cat:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(git -C \"E:/development/magic-tcg-deckcollection\" add .)",
+      "Bash(git -C \"E:/development/magic-tcg-deckcollection\" status)",
+      "Bash(git -C \"E:/development/magic-tcg-deckcollection\" diff --cached --stat)",
+      "Bash(git -C \"E:/development/magic-tcg-deckcollection\" log --oneline -5)",
+      "Bash(git -C \"E:/development/magic-tcg-deckcollection\" add components/ lib/game/ app/api/cards/ docs/game-engine-current-state.md .claude/settings.local.json)"
     ]
   }
 }

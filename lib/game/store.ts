@@ -11,7 +11,13 @@ interface GameStore {
   botPlayerId: string
 
   // Actions
-  initGame: (deckData: DeckData, deckCards: DeckCardData[], humanPlayerId: string, humanPlayerName: string) => void
+  initGame: (
+    deckData: DeckData,
+    deckCards: DeckCardData[],
+    humanPlayerId: string,
+    humanPlayerName: string,
+    options?: { seed?: string; devMode?: boolean }
+  ) => void
   startGame: () => void
   drawCard: (playerId: string) => void
   discardCard: (playerId: string, cardInstanceId: string) => boolean
@@ -19,12 +25,12 @@ interface GameStore {
   tapPermanent: (cardInstanceId: string) => boolean
   untapPermanent: (cardInstanceId: string) => boolean
   addManaFromLand: (playerId: string, cardInstanceId: string, chosenColor?: string) => boolean
-  castSpell: (playerId: string, cardInstanceId: string, xValue?: number, targets?: string[], selectedModes?: number[]) => boolean
+  castSpell: (playerId: string, cardInstanceId: string, xValue?: number, targets?: string[], selectedModes?: number[]) => Promise<boolean>
   castCommander: (playerId: string) => boolean
   declareAttackers: (playerId: string, attackers: Array<{ attackerId: string; targetId: string }>) => boolean
   declareBlockers: (playerId: string, blocks: Array<{ blockerId: string; attackerId: string }>) => boolean
-  activateAbility: (playerId: string, cardInstanceId: string, abilityIndex: number, targetCardId?: string) => boolean
-  passPriority: () => void
+  activateAbility: (playerId: string, cardInstanceId: string, abilityIndex: number, targetCardId?: string) => Promise<boolean>
+  passPriority: () => Promise<void>
   advancePhase: () => void
   advanceToNextInteractivePhase: () => void
   endTurn: () => void
@@ -47,9 +53,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
   humanPlayerId: "",
   botPlayerId: "bot-player",
 
-  initGame: (deckData, deckCards, humanPlayerId, humanPlayerName) => {
+  initGame: (deckData, deckCards, humanPlayerId, humanPlayerName, options) => {
+    console.log('[STORE] initGame called with options:', options)
     const botPlayerId = "bot-player"
-    const gameState = initializeGame(deckData, deckCards, humanPlayerId, humanPlayerName, botPlayerId, "Bot")
+    const gameState = initializeGame(
+      deckData,
+      deckCards,
+      humanPlayerId,
+      humanPlayerName,
+      botPlayerId,
+      "Bot",
+      options
+    )
+    
+    console.log('[STORE] gameState created with devMode:', gameState.devMode, 'seed:', gameState.seed)
 
     // Draw initial hands for mulligan phase
     Object.keys(gameState.players).forEach((playerId) => {
@@ -137,12 +154,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return success
   },
 
-  castSpell: (playerId, cardInstanceId, xValue = 0, targets = [], selectedModes) => {
+  castSpell: async (playerId, cardInstanceId, xValue = 0, targets = [], selectedModes) => {
     const { gameState } = get()
     if (!gameState) return false
 
     const card = gameState.entities[cardInstanceId]
-    const success = actions.castSpell(gameState, playerId, cardInstanceId, xValue, targets, selectedModes)
+    const success = await actions.castSpell(gameState, playerId, cardInstanceId, xValue, targets, selectedModes)
     if (success) {
       // Play different sound for instants vs other spells
       if (card?.typeLine.toLowerCase().includes("instant")) {
@@ -195,23 +212,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return success
   },
 
-  activateAbility: (playerId, cardInstanceId, abilityIndex, targetCardId) => {
+  activateAbility: async (playerId, cardInstanceId, abilityIndex, targetCardId) => {
     const { gameState } = get()
     if (!gameState) return false
 
-    const success = actions.activateAbility(gameState, playerId, cardInstanceId, abilityIndex, targetCardId)
+    const success = await actions.activateAbility(gameState, playerId, cardInstanceId, abilityIndex, targetCardId)
     if (success) {
       set({ gameState: { ...gameState } })
     }
     return success
   },
 
-  passPriority: () => {
+  passPriority: async () => {
+    console.log('[STORE] passPriority called - START')
     const { gameState } = get()
-    if (!gameState) return
+    if (!gameState) {
+      console.log('[STORE] passPriority - no gameState, returning')
+      return
+    }
 
-    actions.passPriority(gameState)
+    console.log('[STORE] passPriority - calling actions.passPriority')
+    await actions.passPriority(gameState)
+    console.log('[STORE] passPriority - actions.passPriority completed, updating state')
     set({ gameState: { ...gameState } })
+    console.log('[STORE] passPriority - state updated, DONE')
   },
 
   advancePhase: () => {

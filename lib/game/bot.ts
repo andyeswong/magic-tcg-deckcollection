@@ -1,6 +1,6 @@
 import type { GameState, CardInstance } from "./types"
 import * as actions from "./actions"
-import { getCurrentStats, parseActivatedAbilities, hasKeyword } from "./card-effects"
+import { getCurrentStats, hasKeyword } from "./card-effects"
 
 /**
  * Simple Bot AI for testing the game engine
@@ -20,7 +20,7 @@ export class SimpleBot {
   }
 
   // Main decision-making function
-  makeDecision(gameState: GameState): void {
+  async makeDecision(gameState: GameState): Promise<void> {
     // Only act if it's bot's turn
     if (gameState.turnState.activePlayerId !== this.botPlayerId) {
       return
@@ -30,7 +30,7 @@ export class SimpleBot {
 
     // Main phases - play lands and spells
     if (phase === "MAIN_1" || phase === "MAIN_2") {
-      this.playMainPhase(gameState)
+      await this.playMainPhase(gameState)
     }
 
     // Combat phase - declare attackers
@@ -47,7 +47,7 @@ export class SimpleBot {
       this.declareBlocks(gameState)
     }
   }
-  private playMainPhase(gameState: GameState): void {
+  private async playMainPhase(gameState: GameState): Promise<void> {
     const botPlayer = gameState.players[this.botPlayerId]
 
     // Step 1: Try to play a land
@@ -57,10 +57,10 @@ export class SimpleBot {
     this.tapLandsForMana(gameState)
 
     // Step 3: Activate useful abilities before casting spells
-    this.activateUsefulAbilities(gameState)
+    await this.activateUsefulAbilities(gameState)
 
     // Step 4: Cast spells (highest CMC first)
-    this.castSpells(gameState, botPlayer)
+    await this.castSpells(gameState, botPlayer)
   }
 
   private tryPlayLand(gameState: GameState, botPlayer: any): void {
@@ -96,7 +96,7 @@ export class SimpleBot {
     })
   }
 
-  private activateUsefulAbilities(gameState: GameState): void {
+  private async activateUsefulAbilities(gameState: GameState): Promise<void> {
     // Find all bot permanents with activated abilities
     const botPermanents = gameState.battlefield.filter((cardId) => {
       const card = gameState.entities[cardId]
@@ -105,21 +105,31 @@ export class SimpleBot {
 
     for (const permanentId of botPermanents) {
       const card = gameState.entities[permanentId]
-      const abilities = parseActivatedAbilities(card.oracleText || "", card.name)
+      
+      // Check if card has runtime state with activated abilities from JSON
+      if (!card.runtimeAbilityState?.activeActivatedAbilities || 
+          card.runtimeAbilityState.activeActivatedAbilities.length === 0) {
+        continue
+      }
+      
+      const abilities = card.runtimeAbilityState.activeActivatedAbilities
 
       for (let i = 0; i < abilities.length; i++) {
         const ability = abilities[i]
 
-        // Strategy: Activate based on effect type
+        // Strategy: Activate based on effect action type
         let shouldActivate = false
         let targetCardId: string | undefined
+        
+        const effectAction = ability.effect?.action || "unknown"
 
-        switch (ability.effect) {
+        switch (effectAction) {
           case "add_mana":
             // Always activate mana abilities if we can
-            shouldActivate = !ability.cost.tap || !card.tapped
+            shouldActivate = !ability.cost?.tap || !card.tapped
             break
 
+          case "draw":
           case "draw_card":
             // Draw cards if we have mana to spare
             const botPlayer = gameState.players[this.botPlayerId]
@@ -135,7 +145,8 @@ export class SimpleBot {
 
           case "deal_damage":
             // Use damage abilities on opponent's biggest creature
-            if (ability.target === "creature" || ability.target === "target") {
+            const targetType = ability.effect?.targets?.type
+            if (targetType === "single" || targetType === "any") {
               const opponentId = Object.keys(gameState.players).find((id) => id !== this.botPlayerId)
               if (opponentId) {
                 const opponentCreatures = gameState.battlefield.filter((id) => {
@@ -145,7 +156,7 @@ export class SimpleBot {
 
                 if (opponentCreatures.length > 0) {
                   // Target the biggest creature we can kill
-                  const damage = ability.amount || 0
+                  const damage = ability.effect?.damage?.amount || 0
                   const killable = opponentCreatures.filter((id) => {
                     const { toughness } = getCurrentStats(gameState.entities[id])
                     return damage >= toughness
@@ -163,15 +174,11 @@ export class SimpleBot {
                   }
                 }
               }
-            } else if (ability.target === "player") {
-              // Deal damage to opponent
-              const opponentId = Object.keys(gameState.players).find((id) => id !== this.botPlayerId)
-              targetCardId = opponentId
-              shouldActivate = true
             }
             break
 
           case "add_counter":
+          case "add_counters":
             // Add counters to our best creature
             const botCreatures = gameState.battlefield.filter((id) => {
               const c = gameState.entities[id]
@@ -192,7 +199,7 @@ export class SimpleBot {
         }
 
         if (shouldActivate) {
-          const success = actions.activateAbility(
+          const success = await actions.activateAbility(
             gameState,
             this.botPlayerId,
             permanentId,
@@ -200,14 +207,14 @@ export class SimpleBot {
             targetCardId,
           )
           if (success) {
-            console.log(`[BOT] Activated ${ability.effect} ability on ${card.name}`)
+            console.log(`[BOT] Activated ${effectAction} ability on ${card.name}`)
           }
         }
       }
     }
   }
 
-  private castSpells(gameState: GameState, botPlayer: any): void {
+  private async castSpells(gameState: GameState, botPlayer: any): Promise<void> {
     // Get all castable cards from hand
     const castableCards: Array<{ cardId: string; card: CardInstance }> = botPlayer.hand
       .map((cardId: string) => ({
@@ -261,13 +268,13 @@ export class SimpleBot {
         }
       }
 
-      const success = actions.castSpell(gameState, this.botPlayerId, cardId, xValue, targets)
+      const success = await actions.castSpell(gameState, this.botPlayerId, cardId, xValue, targets)
       if (success) {
         // Bot automatically passes priority after casting
         // This allows the spell to resolve (or opponent to respond)
         if (gameState.turnState.waitingForPriority && gameState.turnState.priorityPlayerId === this.botPlayerId) {
           console.log(`[BOT] Auto-passing priority after casting ${card.name}`)
-          actions.passPriority(gameState)
+          await actions.passPriority(gameState)
         }
       } else {
         break
@@ -405,7 +412,7 @@ export class SimpleBot {
 }
 
 // Helper function to run bot turn automatically
-export function executeBotTurn(gameState: GameState, botPlayerId: string): void {
+export async function executeBotTurn(gameState: GameState, botPlayerId: string): Promise<void> {
   const bot = new SimpleBot(botPlayerId)
   const phase = gameState.turnState.phase
 
@@ -436,7 +443,7 @@ export function executeBotTurn(gameState: GameState, botPlayerId: string): void 
 
     let currentPhaseIndex = 0
     while (currentPhaseIndex < phasesToAct.length && gameState.turnState.activePlayerId === botPlayerId) {
-      bot.makeDecision(gameState)
+      await bot.makeDecision(gameState)
 
       // If we just declared attackers and there are attackers, stop before DECLARE_BLOCKERS
       // to let the human player declare blocks
@@ -450,9 +457,23 @@ export function executeBotTurn(gameState: GameState, botPlayerId: string): void 
       currentPhaseIndex++
     }
 
-    // After bot's turn ends, auto-advance through non-interactive phases (UNTAP -> MAIN_1)
-    if (gameState.turnState.activePlayerId !== botPlayerId) {
-      actions.advanceToNextInteractivePhase(gameState)
+    // After bot's turn ends (CLEANUP phase), we need to advance to UNTAP which will switch players
+    // Then auto-advance through non-interactive phases (UNTAP -> UPKEEP -> DRAW -> MAIN_1)
+    console.log(`[BOT] Bot turn ended in phase: ${gameState.turnState.phase}, active player: ${gameState.turnState.activePlayerId}`)
+    if (gameState.turnState.phase === "CLEANUP") {
+      console.log(`[BOT] Advancing from CLEANUP to UNTAP to switch players`)
+      // Advance from CLEANUP to UNTAP (this will switch to next player)
+      actions.advancePhase(gameState)
+      console.log(`[BOT] Advanced to ${gameState.turnState.phase}, new active player: ${gameState.turnState.activePlayerId}, bot: ${botPlayerId}`)
+      
+      // Now auto-advance the new player through non-interactive phases
+      if (gameState.turnState.activePlayerId !== botPlayerId) {
+        console.log(`[BOT] Auto-advancing human player through non-interactive phases`)
+        actions.advanceToNextInteractivePhase(gameState)
+        console.log(`[BOT] Finished auto-advance, phase: ${gameState.turnState.phase}, active: ${gameState.turnState.activePlayerId}`)
+      } else {
+        console.log(`[BOT] Still bot's turn after CLEANUP->UNTAP, this shouldn't happen!`)
+      }
     }
   } else {
     // It's opponent's turn - bot may need to block

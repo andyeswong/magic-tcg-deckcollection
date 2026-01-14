@@ -52,6 +52,7 @@ export async function initializeRuntimeState(
 
   const runtimeState: RuntimeAbilityState = {
     activeTriggeredAbilities: [],
+    activeActivatedAbilities: undefined,
     grantedAbilities: [],
     durationEffects: [],
     activeReplacements: [],
@@ -71,6 +72,11 @@ export async function initializeRuntimeState(
       chaptersTriggered: [],
       maxChapters: abilityData.abilities.saga.maxChapters
     }
+  }
+
+  // Copy activated abilities from JSON
+  if (abilityData.abilities.activated && abilityData.abilities.activated.length > 0) {
+    runtimeState.activeActivatedAbilities = abilityData.abilities.activated
   }
 
   // Register triggered abilities

@@ -1,5 +1,5 @@
 import type { GameState, CardInstance, Phase } from "./types"
-import { applyETBCounters, parseTriggeredAbilities, getCurrentStats, registerTrigger, resolveTriggers, hasKeyword, parseActivatedAbilities, checkEntersTapped, type ActivatedAbility } from "./card-effects"
+import { applyETBCounters, parseTriggeredAbilities, getCurrentStats, registerTrigger, resolveTriggers, hasKeyword, checkEntersTapped, type ActivatedAbility } from "./card-effects"
 import { addGameLog } from "./logger"
 import { parseSpellEffect } from "./spell-parser"
 
@@ -105,6 +105,33 @@ export function drawCard(gameState: GameState, playerId: string): void {
     cardName: card.name,
     cardText: card.oracleText || undefined,
   })
+
+  // Trigger abilities that respond to drawing cards
+  const { parseTriggeredAbilities } = require("./card-effects")
+  for (const permanentId of gameState.battlefield) {
+    const permanent = gameState.entities[permanentId]
+    if (permanent.controllerId === playerId) {
+      const triggers = parseTriggeredAbilities(permanent.oracleText || "", permanent.name)
+
+      for (const trigger of triggers) {
+        if (trigger.trigger === "draw") {
+          console.log(`[TRIGGER] ${permanent.name} triggers on draw`)
+          // Add +1/+1 counter (e.g., Chasm Skulker)
+          if (trigger.effect === "add_counter_self") {
+            permanent.counters.p1p1 += (trigger.amount || 1)
+            console.log(`[TRIGGER] Added ${trigger.amount || 1} +1/+1 counter to ${permanent.name} (now has ${permanent.counters.p1p1})`)
+
+            // Trigger store update to show counter change
+            if (typeof window !== 'undefined') {
+              const { useGameStore } = require('./store')
+              useGameStore.setState({ gameState: { ...gameState } })
+            }
+          }
+          // Can add more draw trigger effects here as needed
+        }
+      }
+    }
+  }
 }
 
 // Action: Discard a card from hand
@@ -160,16 +187,24 @@ export function playLand(gameState: GameState, playerId: string, cardInstanceId:
 
     if (abilityData) {
       console.log(`[AbilitySystem] ${card.name} using JSON abilities from database`)
+      console.log(`[JSON-ABILITIES] ${card.name} loaded abilities:`, JSON.stringify(abilityData.abilities, null, 2))
 
       // Apply ETB replacement effects from JSON
       if (abilityData.abilities.replacement) {
         for (const replacement of abilityData.abilities.replacement) {
-          if (replacement.replaces === "etb" && replacement.effect.action === "add_counters") {
-            const amount = replacement.effect.counters?.amount || 0
-            const counterType = replacement.effect.counters?.type || "p1p1"
-            if (amount > 0) {
-              card.counters[counterType] += amount
-              console.log(`[AbilitySystem] Applied ETB replacement: ${card.name} enters with ${amount} ${counterType} counters`)
+          if (replacement.replaces === "etb") {
+            // Check if this is a counter-adding replacement effect
+            // The structure can be either replacement.effect or replacement.modification
+            const effectData = replacement.effect || replacement.modification
+
+            if (effectData?.action === "add_counters" && effectData.counters) {
+              console.log(`[JSON-EFFECT] ETB replacement for ${card.name}:`, JSON.stringify(replacement, null, 2))
+              const amount = effectData.counters.amount || 0
+              const counterType = effectData.counters.type || "p1p1"
+              if (amount > 0 && counterType in card.counters) {
+                card.counters[counterType as keyof typeof card.counters] += amount
+                console.log(`[AbilitySystem] Applied ETB replacement: ${card.name} enters with ${amount} ${counterType} counters`)
+              }
             }
           }
         }
@@ -189,14 +224,22 @@ export function playLand(gameState: GameState, playerId: string, cardInstanceId:
         console.log(`[AbilitySystem] Initialized runtime state for ${card.name}: ${abilities.join(', ')}`)
       }
     } else {
-      console.log(`[AbilitySystem] ${card.name} has no JSON abilities - using text parsing fallback`)
-      // Apply fallback text parsing only if no JSON abilities
-      applyETBCounters(gameState, card, 0)
+      console.log(`[AbilitySystem] ${card.name} has no JSON abilities in database`)
+    }
+
+    // Trigger store update to reflect runtime state changes
+    if (typeof window !== 'undefined') {
+      const { useGameStore } = require('./store')
+      useGameStore.setState({ gameState: { ...gameState } })
     }
   }).catch(err => {
-    console.error(`[AbilitySystem] Failed to initialize runtime state for ${card.name}:`, err)
-    // On error, use text parsing as fallback
-    applyETBCounters(gameState, card, 0)
+    console.error(`[AbilitySystem] Failed to load abilities for ${card.name}:`, err)
+
+    // Trigger store update even on error
+    if (typeof window !== 'undefined') {
+      const { useGameStore } = require('./store')
+      useGameStore.setState({ gameState: { ...gameState } })
+    }
   })
 
   // Check if land enters tapped
@@ -213,9 +256,7 @@ export function playLand(gameState: GameState, playerId: string, cardInstanceId:
     cardText: card.oracleText || undefined,
   })
 
-  // Phase 2: Register ETB triggered abilities for lands (e.g., scry, draw)
-  const triggers = parseTriggeredAbilities(card.oracleText || "", card.name)
-  registerTrigger(gameState, card, "etb", triggers)
+  // Note: ETB triggers are now handled via JSON abilities only
 
   // Attempt to auto-resolve triggers that don't need targets
   resolveTriggers(gameState)
@@ -432,16 +473,24 @@ export function castCommander(gameState: GameState, playerId: string): boolean {
 
     if (abilityData) {
       console.log(`[AbilitySystem] ${commander.name} using JSON abilities from database`)
+      console.log(`[JSON-ABILITIES] ${commander.name} loaded abilities:`, JSON.stringify(abilityData.abilities, null, 2))
 
       // Apply ETB replacement effects from JSON
       if (abilityData.abilities.replacement) {
         for (const replacement of abilityData.abilities.replacement) {
-          if (replacement.replaces === "etb" && replacement.effect.action === "add_counters") {
-            const amount = replacement.effect.counters?.amount || 0
-            const counterType = replacement.effect.counters?.type || "p1p1"
-            if (amount > 0) {
-              commander.counters[counterType] += amount
-              console.log(`[AbilitySystem] Applied ETB replacement: ${commander.name} enters with ${amount} ${counterType} counters`)
+          if (replacement.replaces === "etb") {
+            // Check if this is a counter-adding replacement effect
+            // The structure can be either replacement.effect or replacement.modification
+            const effectData = replacement.effect || replacement.modification
+
+            if (effectData?.action === "add_counters" && effectData.counters) {
+              console.log(`[JSON-EFFECT] ETB replacement for ${commander.name}:`, JSON.stringify(replacement, null, 2))
+              const amount = effectData.counters.amount || 0
+              const counterType = effectData.counters.type || "p1p1"
+              if (amount > 0 && counterType in commander.counters) {
+                commander.counters[counterType as keyof typeof commander.counters] += amount
+                console.log(`[AbilitySystem] Applied ETB replacement: ${commander.name} enters with ${amount} ${counterType} counters`)
+              }
             }
           }
         }
@@ -461,14 +510,22 @@ export function castCommander(gameState: GameState, playerId: string): boolean {
         console.log(`[AbilitySystem] Initialized runtime state for ${commander.name}: ${abilities.join(', ')}`)
       }
     } else {
-      console.log(`[AbilitySystem] ${commander.name} has no JSON abilities - using text parsing fallback`)
-      // Apply fallback text parsing only if no JSON abilities
-      applyETBCounters(gameState, commander, 0)
+      console.log(`[AbilitySystem] ${commander.name} has no JSON abilities in database`)
+    }
+
+    // Trigger store update to reflect runtime state changes
+    if (typeof window !== 'undefined') {
+      const { useGameStore } = require('./store')
+      useGameStore.setState({ gameState: { ...gameState } })
     }
   }).catch(err => {
-    console.error(`[AbilitySystem] Failed to initialize runtime state for ${commander.name}:`, err)
-    // On error, use text parsing as fallback
-    applyETBCounters(gameState, commander, 0)
+    console.error(`[AbilitySystem] Failed to load abilities for ${commander.name}:`, err)
+
+    // Trigger store update even on error
+    if (typeof window !== 'undefined') {
+      const { useGameStore } = require('./store')
+      useGameStore.setState({ gameState: { ...gameState } })
+    }
   })
 
   // Increment commander tax
@@ -485,14 +542,14 @@ export function castCommander(gameState: GameState, playerId: string): boolean {
 }
 
 // Action: Cast a spell (uses stack system)
-export function castSpell(
+export async function castSpell(
   gameState: GameState,
   playerId: string,
   cardInstanceId: string,
   xValue: number = 0,
   targets: string[] = [],
   selectedModes?: number[],
-): boolean {
+): Promise<boolean> {
   const player = gameState.players[playerId]
   const card = gameState.entities[cardInstanceId]
 
@@ -520,7 +577,7 @@ export function castSpell(
   })
 
   // Put spell on the stack
-  putSpellOnStack(gameState, cardInstanceId, playerId, xValue, targets, selectedModes)
+  await putSpellOnStack(gameState, cardInstanceId, playerId, xValue, targets, selectedModes)
 
   // Caster retains priority (can respond to their own spell)
   gameState.turnState.waitingForPriority = true
@@ -533,14 +590,14 @@ export function castSpell(
 }
 
 // Put a spell on the stack
-export function putSpellOnStack(
+export async function putSpellOnStack(
   gameState: GameState,
   cardInstanceId: string,
   controllerId: string,
   xValue: number = 0,
   targets: string[] = [],
   selectedModes?: number[],
-): void {
+): Promise<void> {
   const card = gameState.entities[cardInstanceId]
   const stackItem: import("./types").StackItem = {
     id: `stack-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -556,10 +613,71 @@ export function putSpellOnStack(
 
   gameState.turnState.stack.push(stackItem)
   console.log(`[STACK] ${card.name} added to stack (${gameState.turnState.stack.length} items) with ${targets.length} target(s)${selectedModes ? `, ${selectedModes.length} mode(s)` : ""}`)
+
+  // Check for "cast_spell" triggers on battlefield permanents
+  console.log('[CAST-SPELL-TRIGGER] Checking for cast_spell triggers on battlefield')
+  for (const permanentId of gameState.battlefield) {
+    const permanent = gameState.entities[permanentId]
+    
+    // Check if this permanent has JSON abilities with cast_spell triggers
+    if (permanent.runtimeAbilityState?.activeTriggeredAbilities) {
+      const { loadAbilities } = require("./ability-loader")
+      const abilityData = await loadAbilities(permanent.dbReferenceId)
+      
+      try {
+        if (abilityData?.abilities.triggered) {
+          for (const trigger of abilityData.abilities.triggered) {
+            if (trigger.trigger?.event === "cast_spell") {
+              // Check trigger conditions
+              let shouldTrigger = false
+              
+              if (trigger.trigger.controller === "you") {
+                // Triggers when YOU cast a spell (permanent's controller casts)
+                shouldTrigger = permanent.controllerId === controllerId
+              } else if (trigger.trigger.conditions?.controller === "opponent") {
+                // Triggers when OPPONENT casts a spell
+                shouldTrigger = permanent.controllerId !== controllerId
+              } else {
+                // Triggers when ANY spell is cast
+                shouldTrigger = true
+              }
+              
+              if (shouldTrigger) {
+                console.log(`[CAST-SPELL-TRIGGER] ${permanent.name} triggers on cast_spell (controller: ${trigger.trigger.controller || trigger.trigger.conditions?.controller}): ${trigger.effect.action}`)
+                
+                // Create trigger for proliferate or other cast_spell effects
+                const { registerTrigger } = require("./card-effects")
+                
+                // Determine the effect type based on action and targets
+                let effectType = trigger.effect.keywordAction || trigger.effect.action
+                if (trigger.effect.action === "add_counters" && trigger.effect.targets?.type === "none") {
+                  effectType = "add_counter_self"
+                }
+                
+                // Convert JSON trigger to legacy format
+                const legacyTrigger = {
+                  trigger: "cast" as const,
+                  effect: effectType,
+                  amount: trigger.effect.keywordValue || trigger.effect.counters?.amount || trigger.effect.lifeGain?.amount || 1,
+                  target: trigger.effect.targets?.type === "none" ? "self" : undefined,
+                  cardName: permanent.name
+                }
+                
+                registerTrigger(gameState, permanent, "cast", [legacyTrigger])
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`[CAST-SPELL-TRIGGER] Failed to load abilities for ${permanent.name}:`, err)
+      }
+    }
+  }
 }
 
 // Pass priority to the next player
-export function passPriority(gameState: GameState): void {
+export async function passPriority(gameState: GameState, autoContinueForBot: boolean = true): Promise<void> {
+  console.log('[PRIORITY-ACTION] passPriority called')
   const playerIds = Object.keys(gameState.players)
   const currentIndex = playerIds.indexOf(gameState.turnState.priorityPlayerId)
   const nextIndex = (currentIndex + 1) % playerIds.length
@@ -569,28 +687,45 @@ export function passPriority(gameState: GameState): void {
 
   console.log(`[PRIORITY] Passed to ${gameState.players[gameState.turnState.priorityPlayerId].name} (passes: ${gameState.turnState.priorityPasses})`)
 
+  // If priority passed to bot and stack has items, auto-pass for bot
+  if (autoContinueForBot && gameState.turnState.stack.length > 0) {
+    const nextPlayer = gameState.players[gameState.turnState.priorityPlayerId]
+    if (nextPlayer.name === "Bot") {
+      console.log('[PRIORITY-ACTION] Bot received priority, auto-passing for bot')
+      // Recursively pass priority for bot (without auto-continue to avoid infinite loop)
+      await passPriority(gameState, false)
+      return
+    }
+  }
+
   // If all players passed, resolve top of stack
   if (gameState.turnState.priorityPasses >= playerIds.length) {
+    console.log('[PRIORITY-ACTION] All players passed, checking stack')
     if (gameState.turnState.stack.length > 0) {
-      resolveTopOfStack(gameState)
+      console.log('[PRIORITY-ACTION] Stack has items, resolving top')
+      await resolveTopOfStack(gameState)
+      console.log('[PRIORITY-ACTION] Stack item resolved')
       // Reset priority passes and give priority to active player
       gameState.turnState.priorityPasses = 0
       gameState.turnState.priorityPlayerId = gameState.turnState.activePlayerId
 
       // If stack is now empty, stop waiting for priority
       if (gameState.turnState.stack.length === 0) {
+        console.log('[PRIORITY-ACTION] Stack empty, stopping priority')
         gameState.turnState.waitingForPriority = false
       }
     } else {
+      console.log('[PRIORITY-ACTION] Stack empty, stopping priority')
       // Stack is empty, stop waiting
       gameState.turnState.waitingForPriority = false
       gameState.turnState.priorityPasses = 0
     }
   }
+  console.log('[PRIORITY-ACTION] passPriority completed')
 }
 
 // Resolve the top item on the stack
-export function resolveTopOfStack(gameState: GameState): void {
+export async function resolveTopOfStack(gameState: GameState): Promise<void> {
   if (gameState.turnState.stack.length === 0) {
     console.log(`[STACK] Nothing to resolve`)
     return
@@ -610,75 +745,85 @@ export function resolveTopOfStack(gameState: GameState): void {
       card.typeLine.toLowerCase().includes("enchantment") ||
       card.typeLine.toLowerCase().includes("planeswalker")
     ) {
-      // Move from stack to battlefield
-      gameState.battlefield.push(stackItem.cardInstanceId)
-      card.zone = "BATTLEFIELD"
-
-      // Initialize runtime ability state (v1.1)
+      // Initialize runtime ability state (v1.1) - BEFORE moving to battlefield
       const { initializeRuntimeState } = require("./runtime-state-manager")
       const { loadAbilities } = require("./ability-loader")
 
-      // Load abilities and apply effects (async - doesn't block game flow)
-      loadAbilities(card.dbReferenceId).then(async abilityData => {
-        card.runtimeAbilityState = await initializeRuntimeState(card, abilityData || undefined)
+      // Load abilities and apply effects synchronously
+      const abilityData = await loadAbilities(card.dbReferenceId)
+      card.runtimeAbilityState = await initializeRuntimeState(card, abilityData || undefined)
 
-        if (abilityData) {
-          console.log(`[AbilitySystem] ${card.name} using JSON abilities from database`)
+      if (abilityData) {
+        console.log(`[AbilitySystem] ${card.name} using JSON abilities from database`)
+        console.log(`[JSON-ABILITIES] ${card.name} loaded abilities:`, JSON.stringify(abilityData.abilities, null, 2))
 
-          // Apply ETB replacement effects from JSON
-          if (abilityData.abilities.replacement) {
-            for (const replacement of abilityData.abilities.replacement) {
-              if (replacement.replaces === "etb" && replacement.effect.action === "add_counters") {
-                const amount = replacement.effect.counters?.amount || 0
-                const counterType = replacement.effect.counters?.type || "p1p1"
-                if (amount > 0) {
-                  card.counters[counterType] += amount
-                  console.log(`[AbilitySystem] Applied ETB replacement: ${card.name} enters with ${amount} ${counterType} counters`)
+        // Apply ETB replacement effects from JSON BEFORE moving to battlefield
+        if (abilityData.abilities.replacement) {
+          console.log(`[ETB-CHECK] ${card.name} has ${abilityData.abilities.replacement.length} replacement effects`)
+          for (const replacement of abilityData.abilities.replacement) {
+            console.log(`[ETB-CHECK] Checking replacement:`, replacement.replaces)
+            if (replacement.replaces === "etb") {
+              // Check if this is a counter-adding replacement effect
+              // The structure can be either replacement.effect or replacement.modification
+              const effectData = replacement.effect || replacement.modification
+              console.log(`[ETB-CHECK] ETB replacement effectData:`, effectData)
+
+              // Check for both 'action' and 'type' since JSON schema uses 'type'
+              const isAddCounters = effectData?.action === "add_counters" || effectData?.type === "add_counters"
+              if (isAddCounters && effectData.counters) {
+                console.log(`[JSON-EFFECT] ETB replacement for ${card.name}:`, JSON.stringify(replacement, null, 2))
+                const amount = effectData.counters.amount || 0
+                const counterType = effectData.counters.type || "p1p1"
+                console.log(`[ETB-COUNTER] Attempting to add ${amount} ${counterType} counters to ${card.name}`)
+                console.log(`[ETB-COUNTER] Current counters before:`, JSON.stringify(card.counters))
+                console.log(`[ETB-COUNTER] Counter type exists in card.counters:`, counterType in card.counters)
+                if (amount > 0 && counterType in card.counters) {
+                  card.counters[counterType as keyof typeof card.counters] += amount
+                  console.log(`[ETB-COUNTER] ✅ Applied ${amount} ${counterType} counters to ${card.name}`)
+                  console.log(`[ETB-COUNTER] Current counters after:`, JSON.stringify(card.counters))
+                } else {
+                  console.log(`[ETB-COUNTER] ❌ Failed to add counters - amount: ${amount}, exists: ${counterType in card.counters}`)
                 }
               }
             }
           }
+        }
 
-          const abilities = []
-          if (card.runtimeAbilityState?.saga) {
-            abilities.push(`Saga (${card.runtimeAbilityState.saga.maxChapters} chapters)`)
-          }
-          if (card.runtimeAbilityState?.activeTriggeredAbilities.length > 0) {
-            abilities.push(`${card.runtimeAbilityState.activeTriggeredAbilities.length} triggered`)
-          }
-          if (card.runtimeAbilityState?.activeReplacements.length > 0) {
-            abilities.push(`${card.runtimeAbilityState.activeReplacements.length} replacement`)
-          }
-          if (abilities.length > 0) {
-            console.log(`[AbilitySystem] Initialized runtime state for ${card.name}: ${abilities.join(', ')}`)
-          }
+        const abilities = []
+        if (card.runtimeAbilityState?.saga) {
+          abilities.push(`Saga (${card.runtimeAbilityState.saga.maxChapters} chapters)`)
+        }
+        if (card.runtimeAbilityState?.activeTriggeredAbilities.length > 0) {
+          abilities.push(`${card.runtimeAbilityState.activeTriggeredAbilities.length} triggered`)
+        }
+        if (card.runtimeAbilityState?.activeReplacements.length > 0) {
+          abilities.push(`${card.runtimeAbilityState.activeReplacements.length} replacement`)
+        }
+        if (abilities.length > 0) {
+          console.log(`[AbilitySystem] Initialized runtime state for ${card.name}: ${abilities.join(', ')}`)
+        }
+      } else {
+        console.log(`[AbilitySystem] ${card.name} has no JSON abilities in database`)
+      }
 
-          // Register ETB triggers from JSON abilities
-          if (abilityData.abilities.triggered) {
-            for (const trigger of abilityData.abilities.triggered) {
-              if (trigger.trigger.event === "etb" || trigger.trigger.event === "self_etb") {
-                const triggers = parseTriggeredAbilities(card.oracleText || "", card.name)
-                registerTrigger(gameState, card, "etb", triggers)
-                console.log(`[AbilitySystem] Registered ETB triggers from JSON for ${card.name}`)
-                break // Only register once
-              }
-            }
-          }
-        } else {
-          console.log(`[AbilitySystem] ${card.name} has no JSON abilities - using text parsing fallback`)
-          // Apply fallback text parsing only if no JSON abilities
-          applyETBCounters(gameState, card, stackItem.xValue || 0)
-          // Register ETB triggered abilities from text parsing
+      // NOW move from stack to battlefield (after counters are applied)
+      gameState.battlefield.push(stackItem.cardInstanceId)
+      card.zone = "BATTLEFIELD"
+
+      // Register ETB triggers from JSON abilities
+      if (abilityData?.abilities.triggered && abilityData.abilities.triggered.length > 0) {
+        const hasETBTriggers = abilityData.abilities.triggered.some(
+          trigger => trigger.trigger.event === "etb" || trigger.trigger.event === "self_etb"
+        )
+
+        if (hasETBTriggers) {
+          // TODO: Implement proper JSON trigger registration
+          // For now, still use text parsing but only if there are actual ETB triggers in JSON
           const triggers = parseTriggeredAbilities(card.oracleText || "", card.name)
           registerTrigger(gameState, card, "etb", triggers)
+          console.log(`[AbilitySystem] Registered ETB triggers from JSON for ${card.name}`)
         }
-      }).catch(err => {
-        console.error(`[AbilitySystem] Failed to initialize runtime state for ${card.name}:`, err)
-        // On error, use text parsing as fallback
-        applyETBCounters(gameState, card, stackItem.xValue || 0)
-        const triggers = parseTriggeredAbilities(card.oracleText || "", card.name)
-        registerTrigger(gameState, card, "etb", triggers)
-      })
+      }
 
       // Check if permanent enters tapped
       if (checkEntersTapped(card.oracleText || "", card.name)) {
@@ -691,7 +836,7 @@ export function resolveTopOfStack(gameState: GameState): void {
         card.summoningSick = true
       }
 
-      // Attempt to auto-resolve triggers
+      // Attempt to auto-resolve ETB triggers
       resolveTriggers(gameState)
 
     } else {
@@ -700,6 +845,10 @@ export function resolveTopOfStack(gameState: GameState): void {
       controller.graveyard.push(stackItem.cardInstanceId)
       card.zone = "GRAVEYARD"
     }
+
+    // Resolve any cast_spell triggers (e.g., Sunscorch Regent)
+    // This needs to run for ALL spell types, not just permanents
+    resolveTriggers(gameState)
 
     addGameLog(gameState, `resolved`, "effect", stackItem.controllerId, {
       cardName: card.name,
@@ -1068,13 +1217,13 @@ export function dealCombatDamage(gameState: GameState): void {
 }
 
 // Phase 5: Activate an ability on a permanent
-export function activateAbility(
+export async function activateAbility(
   gameState: GameState,
   playerId: string,
   cardInstanceId: string,
   abilityIndex: number,
   targetCardId?: string,
-): boolean {
+): Promise<boolean> {
   const player = gameState.players[playerId]
   const card = gameState.entities[cardInstanceId]
 
@@ -1090,14 +1239,68 @@ export function activateAbility(
     return false
   }
 
-  // Parse activated abilities
-  const abilities = parseActivatedAbilities(card.oracleText || "", card.name)
+  // Load JSON abilities
+  const { loadAbilities } = require("./ability-loader")
+  const abilityData = await loadAbilities(card.dbReferenceId)
+
+  let abilities: ActivatedAbility[] = []
+
+  if (!abilityData?.abilities.activated || abilityData.abilities.activated.length === 0) {
+    console.log(`[AbilitySystem] ${card.name} has no JSON activated abilities`)
+    return false
+  }
+
+  console.log(`[AbilitySystem] Using JSON activated abilities for ${card.name}`)
+  // Convert JSON activated abilities to game format
+  abilities = abilityData.abilities.activated.map((jsonAbility: any) => {
+    const gameAbility: ActivatedAbility = {
+      cost: jsonAbility.cost || {},
+      effect: jsonAbility.effect?.action || "unknown",
+      timing: jsonAbility.timing || "instant",
+    }
+
+    // Check for additional costs (not yet implemented)
+    if (jsonAbility.cost?.additionalCosts && jsonAbility.cost.additionalCosts.length > 0) {
+      gameAbility.hasAdditionalCosts = true
+      console.log(`[AbilitySystem] ${card.name} ability has additional costs (not yet supported)`)
+    }
+
+    // Handle mana-adding abilities
+    if (jsonAbility.effect?.action === "add_mana") {
+      if (jsonAbility.effect.mana?.colors) {
+        gameAbility.manaToAdd = jsonAbility.effect.mana.colors
+      }
+      gameAbility.amount = jsonAbility.effect.mana?.amount
+    }
+
+    // Handle abilities with targets
+    if (jsonAbility.effect?.targets) {
+      gameAbility.target = "target"
+      gameAbility.targetRestriction = jsonAbility.effect.targets.restriction
+      gameAbility.targetFilters = jsonAbility.effect.targets.filters
+    }
+
+    // Handle counter-adding abilities
+    if (jsonAbility.effect?.action === "add_counters") {
+      gameAbility.amount = jsonAbility.effect.counters?.amount
+      gameAbility.counterType = jsonAbility.effect.counters?.type
+    }
+
+    return gameAbility
+  })
+
   if (abilityIndex < 0 || abilityIndex >= abilities.length) {
     console.log(`[ABILITY] Invalid ability index ${abilityIndex}`)
     return false
   }
 
   const ability = abilities[abilityIndex]
+
+  // Check for unsupported additional costs
+  if ((ability as any).hasAdditionalCosts) {
+    console.log(`[ABILITY] ${card.name} ability requires additional costs (not yet implemented)`)
+    return false
+  }
 
   // Validate timing
   if (ability.timing === "sorcery") {
@@ -1227,14 +1430,21 @@ function executeAbilityEffect(
       // Add mana to controller's mana pool
       if (ability.manaToAdd && ability.manaToAdd.length > 0) {
         const player = gameState.players[sourceCard.controllerId]
+        const amount = ability.amount || 1
+
         ability.manaToAdd.forEach(color => {
-          if (color === "W") player.manaPool.W++
-          else if (color === "U") player.manaPool.U++
-          else if (color === "B") player.manaPool.B++
-          else if (color === "R") player.manaPool.R++
-          else if (color === "G") player.manaPool.G++
-          else if (color === "C") player.manaPool.C++
+          // Normalize color string (handle both "C" and "colorless")
+          const normalizedColor = color === "colorless" ? "C" : color
+
+          if (normalizedColor === "W") player.manaPool.W += amount
+          else if (normalizedColor === "U") player.manaPool.U += amount
+          else if (normalizedColor === "B") player.manaPool.B += amount
+          else if (normalizedColor === "R") player.manaPool.R += amount
+          else if (normalizedColor === "G") player.manaPool.G += amount
+          else if (normalizedColor === "C") player.manaPool.C += amount
         })
+
+        console.log(`[AbilitySystem] Added ${amount} mana of ${ability.manaToAdd.join(', ')} to ${player.name}'s pool`)
       }
       break
 
@@ -1246,15 +1456,30 @@ function executeAbilityEffect(
       break
 
     case "add_counter":
+    case "add_counters":
       if (targetCardId) {
         const target = gameState.entities[targetCardId]
         if (target) {
-          target.counters.p1p1 += ability.amount || 1
-          console.log(`[ABILITY] Added ${ability.amount || 1} counter(s) to ${target.name}`)
+          const counterType = (ability as any).counterType || "p1p1"
+          const amount = ability.amount || 1
+
+          if (counterType in target.counters) {
+            target.counters[counterType as keyof typeof target.counters] += amount
+            console.log(`[AbilitySystem] Added ${amount} ${counterType} counter(s) to ${target.name}`)
+          } else {
+            console.log(`[ABILITY] Unknown counter type: ${counterType}`)
+          }
         }
       } else {
-        sourceCard.counters.p1p1 += ability.amount || 1
-        console.log(`[ABILITY] Added ${ability.amount || 1} counter(s) to ${sourceCard.name}`)
+        const counterType = (ability as any).counterType || "p1p1"
+        const amount = ability.amount || 1
+
+        if (counterType in sourceCard.counters) {
+          sourceCard.counters[counterType as keyof typeof sourceCard.counters] += amount
+          console.log(`[AbilitySystem] Added ${amount} ${counterType} counter(s) to ${sourceCard.name}`)
+        } else {
+          console.log(`[ABILITY] Unknown counter type: ${counterType}`)
+        }
       }
       break
   }
@@ -1306,15 +1531,9 @@ export function advancePhase(gameState: GameState): void {
   const nextPhase = getNextPhase(currentPhase)
 
   console.log(`[PHASE] Advancing from ${currentPhase} to ${nextPhase}`)
-  gameState.turnState.phase = nextPhase
-
-  // Log phase change
-  const activePlayer = gameState.players[gameState.turnState.activePlayerId]
-  addGameLog(gameState, `advanced to ${nextPhase.replace(/_/g, " ")}`, "phase", activePlayer.id, {
-    details: nextPhase === "UNTAP" ? `Turn ${gameState.turnState.turnNumber + 1} begins` : undefined,
-  })
-
-  // If we wrapped around to UNTAP, it's a new turn
+  
+  // If we wrapped around to UNTAP, switch to the next player BEFORE setting the phase
+  // This ensures the new active player is set when we log and execute UNTAP phase
   if (nextPhase === "UNTAP") {
     const playerIds = Object.keys(gameState.players)
     const currentActiveIndex = playerIds.indexOf(gameState.turnState.activePlayerId)
@@ -1325,9 +1544,18 @@ export function advancePhase(gameState: GameState): void {
     gameState.turnState.turnNumber++
 
     // Reset turn-based flags
-    const activePlayer = gameState.players[gameState.turnState.activePlayerId]
-    activePlayer.flags.landsPlayedThisTurn = 0
+    const newActivePlayer = gameState.players[gameState.turnState.activePlayerId]
+    newActivePlayer.flags.landsPlayedThisTurn = 0
   }
+
+  // Set the phase AFTER potentially switching players
+  gameState.turnState.phase = nextPhase
+
+  // Log phase change with correct active player
+  const activePlayer = gameState.players[gameState.turnState.activePlayerId]
+  addGameLog(gameState, `advanced to ${nextPhase.replace(/_/g, " ")}`, "phase", activePlayer.id, {
+    details: nextPhase === "UNTAP" ? `Turn ${gameState.turnState.turnNumber} begins` : undefined,
+  })
 
   // Handle phase-specific actions
   if (nextPhase === "UNTAP") {
@@ -1336,6 +1564,26 @@ export function advancePhase(gameState: GameState): void {
     const { handleStunCounters } = require("./runtime-state-manager")
 
     console.log(`[PHASE-DEBUG] UNTAP phase - battlefield has ${gameState.battlefield.length} cards:`, gameState.battlefield)
+    
+    // Clean up battlefield array - remove any cards that aren't actually on battlefield
+    const validBattlefieldCards = gameState.battlefield.filter(cardId => {
+      const card = gameState.entities[cardId]
+      if (!card) {
+        console.log(`[PHASE-DEBUG] Removing ${cardId} - card doesn't exist`)
+        return false
+      }
+      if (card.zone !== "BATTLEFIELD") {
+        console.log(`[PHASE-DEBUG] Removing ${card.name} (${cardId}) - zone is ${card.zone}, not BATTLEFIELD`)
+        return false
+      }
+      return true
+    })
+    
+    if (validBattlefieldCards.length !== gameState.battlefield.length) {
+      console.log(`[PHASE-DEBUG] Cleaned battlefield: ${gameState.battlefield.length} -> ${validBattlefieldCards.length}`)
+      gameState.battlefield = validBattlefieldCards
+    }
+    
     gameState.battlefield.forEach((cardId) => {
       const card = gameState.entities[cardId]
       console.log(`[PHASE-DEBUG] Processing ${card.name} (${cardId}) - zone: ${card.zone}, controller: ${card.controllerId}`)
@@ -1349,10 +1597,12 @@ export function advancePhase(gameState: GameState): void {
       }
     })
 
-    // Empty mana pools
-    Object.values(gameState.players).forEach((player) => {
-      player.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }
-    })
+    // Empty mana pools (skip in dev mode)
+    if (!gameState.devMode) {
+      Object.values(gameState.players).forEach((player) => {
+        player.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }
+      })
+    }
   }
 
   if (nextPhase === "UPKEEP") {
@@ -1439,9 +1689,11 @@ export function advancePhase(gameState: GameState): void {
       cleanupExpiredEffects(card, "end_of_turn")
     })
 
-    // Empty mana pools, remove temporary effects, etc.
+    // Empty mana pools, remove temporary effects, etc. (skip mana clearing in dev mode)
     Object.values(gameState.players).forEach((player) => {
-      player.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }
+      if (!gameState.devMode) {
+        player.manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }
+      }
 
       // Check hand size (maximum 7 cards)
       const maxHandSize = 7

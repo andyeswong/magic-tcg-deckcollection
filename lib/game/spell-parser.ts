@@ -86,9 +86,17 @@ export function parseSpellEffect(oracleText: string, cardName: string): SpellEff
   }
 
   // Search library effects
+  // Exclude activated abilities (lines with {T} or mana costs followed by colon)
+  // Activated abilities should not trigger when casting the spell
   if (text.includes("search your library")) {
-    const searchEffect = parseLibrarySearch(text)
-    if (searchEffect) effects.push(searchEffect)
+    // Check if this is part of an activated ability
+    const hasActivatedAbility = text.includes("{t}:") || text.includes("{t},") || 
+                                 /\{\d+\}.*:.*search your library/.test(text)
+    
+    if (!hasActivatedAbility) {
+      const searchEffect = parseLibrarySearch(text)
+      if (searchEffect) effects.push(searchEffect)
+    }
   }
 
   // Destroy effects
@@ -280,16 +288,18 @@ function parseCounters(text: string): SpellEffect | null {
     effect.counters!.type = "shield"
   } else if (text.includes("vow counter")) {
     effect.counters!.type = "vow"
+  } else if (text.includes("indestructible counter")) {
+    effect.counters!.type = "indestructible"
   } else if (text.includes("+1/+1 counter")) {
     effect.counters!.type = "+1/+1"
   } else if (text.includes("loyalty counter")) {
     effect.counters!.type = "loyalty"
   }
 
-  // Determine count (look for "a" or numbers)
-  const countMatch = text.match(/(\d+|\ba\b)\s+(?:shield|vow|\+1\/\+1|loyalty)\s+counter/i)
+  // Determine count (look for "a" or "an" or numbers)
+  const countMatch = text.match(/(\d+|\ba\b|\ban\b)\s+(?:shield|vow|indestructible|\+1\/\+1|loyalty)\s+counter/i)
   if (countMatch) {
-    effect.counters!.count = countMatch[1] === "a" ? 1 : parseInt(countMatch[1])
+    effect.counters!.count = (countMatch[1] === "a" || countMatch[1] === "an") ? 1 : parseInt(countMatch[1])
   }
 
   // Target count

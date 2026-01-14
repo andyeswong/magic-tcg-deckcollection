@@ -53,7 +53,7 @@ export function isCardPlayable(
     const isActivePlayer = gameState.turnState.activePlayerId === playerId
     const canCast = isMainPhase && stackIsEmpty && isActivePlayer
 
-    console.log(`[PLAYABLE] ${card.name} is sorcery-speed, main phase: ${isMainPhase}, stack empty: ${stackIsEmpty}, active: ${isActivePlayer}, can cast: ${canCast}`)
+    // Removed verbose log - console.log(`[PLAYABLE] ${card.name} is sorcery-speed, main phase: ${isMainPhase}, stack empty: ${stackIsEmpty}, active: ${isActivePlayer}, can cast: ${canCast}`)
     return canCast
   }
 

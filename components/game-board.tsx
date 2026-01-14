@@ -23,7 +23,6 @@ import { AudioControls } from "@/components/audio-controls"
 import { useGameStore } from "@/lib/game/store"
 import { executeBotTurn } from "@/lib/game/bot"
 import { parseLandManaOptions, isDualLand } from "@/lib/game/land-parser"
-import { parseActivatedAbilities } from "@/lib/game/card-effects"
 import { isCardPlayable, isLandPlayable } from "@/lib/game/helpers"
 import { parseSpellEffect } from "@/lib/game/spell-parser"
 import type { SpellEffect } from "@/lib/game/spell-parser"
@@ -68,6 +67,7 @@ export function GameBoard() {
   const [attackingCards, setAttackingCards] = useState<string[]>([])
   const [manaChoiceOpen, setManaChoiceOpen] = useState(false)
   const [manaChoiceCard, setManaChoiceCard] = useState<string | null>(null)
+  const [manaChoiceAbilityIndex, setManaChoiceAbilityIndex] = useState<number | null>(null)
   const [xValueDialogOpen, setXValueDialogOpen] = useState(false)
   const [xValueCard, setXValueCard] = useState<string | null>(null)
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false)
@@ -275,17 +275,45 @@ export function GameBoard() {
   const handleManaChoice = (color: ManaColor) => {
     if (!manaChoiceCard) return
 
-    const success = addManaFromLand(humanPlayerId, manaChoiceCard, color)
-    if (success) {
-      toast.success(`Added ${color} mana to pool`)
+    // Check if this is from an activated ability or a land tap
+    if (manaChoiceAbilityIndex !== null) {
+      // Activated ability (like Arcane Signet)
+      // Manually add the chosen mana to the pool
+      const player = gameState.players[humanPlayerId]
+      if (color === "W") player.manaPool.W++
+      else if (color === "U") player.manaPool.U++
+      else if (color === "B") player.manaPool.B++
+      else if (color === "R") player.manaPool.R++
+      else if (color === "G") player.manaPool.G++
+      else if (color === "C") player.manaPool.C++
+
+      // Tap the card if needed
+      const card = gameState.entities[manaChoiceCard]
+      if (!card.tapped) {
+        card.tapped = true
+      }
+
+      // Force state update
+      useGameStore.setState({ gameState: { ...gameState } })
+
+      toast.success(`Added ${color} mana to pool from ${card.name}`)
       setSelectedCard(null)
       setManaChoiceCard(null)
+      setManaChoiceAbilityIndex(null)
     } else {
-      toast.error("Failed to add mana")
+      // Land tap
+      const success = addManaFromLand(humanPlayerId, manaChoiceCard, color)
+      if (success) {
+        toast.success(`Added ${color} mana to pool`)
+        setSelectedCard(null)
+        setManaChoiceCard(null)
+      } else {
+        toast.error("Failed to add mana")
+      }
     }
   }
 
-  const handleCastSpell = () => {
+  const handleCastSpell = async () => {
     if (!selectedCard) return
     const card = gameState.entities[selectedCard]
 
@@ -320,7 +348,7 @@ export function GameBoard() {
       setXValueDialogOpen(true)
     } else {
       // Simple spell - cast directly
-      const success = castSpell(humanPlayerId, selectedCard)
+      const success = await castSpell(humanPlayerId, selectedCard)
       if (success) {
         toast.success(`${card.name} cast successfully`)
         setSelectedCard(null)
@@ -330,10 +358,10 @@ export function GameBoard() {
     }
   }
 
-  const handleXValueChoice = (xValue: number) => {
+  const handleXValueChoice = async (xValue: number) => {
     if (!xValueCard) return
     const card = gameState.entities[xValueCard]
-    const success = castSpell(humanPlayerId, xValueCard, xValue)
+    const success = await castSpell(humanPlayerId, xValueCard, xValue)
     if (success) {
       toast.success(`${card.name} cast with X=${xValue}`)
       setSelectedCard(null)
@@ -414,12 +442,12 @@ export function GameBoard() {
     toast.success(`Discarded ${cardIds.length} card${cardIds.length > 1 ? "s" : ""}`)
   }
 
-  const handleModalSpellConfirm = (selectedModes: number[]) => {
+  const handleModalSpellConfirm = async (selectedModes: number[]) => {
     if (!modalSpellData) return
     const card = gameState.entities[modalSpellData.card]
 
     // Cast spell with selected modes
-    const success = castSpell(humanPlayerId, modalSpellData.card, 0, [], selectedModes)
+    const success = await castSpell(humanPlayerId, modalSpellData.card, 0, [], selectedModes)
     if (success) {
       toast.success(`${card.name} cast (${selectedModes.length} mode${selectedModes.length > 1 ? "s" : ""})`)
       setSelectedCard(null)
@@ -429,13 +457,13 @@ export function GameBoard() {
     }
   }
 
-  const handleLibrarySearchSelect = (cardId: string) => {
+  const handleLibrarySearchSelect = async (cardId: string) => {
     if (!librarySearchData) return
     const spell = gameState.entities[librarySearchData.card]
 
     // TODO: Cast spell with selected card from library
     // For now, just cast the spell (backend will need to be updated)
-    const success = castSpell(humanPlayerId, librarySearchData.card)
+    const success = await castSpell(humanPlayerId, librarySearchData.card)
     if (success) {
       toast.success(`${spell.name} cast - selected ${gameState.entities[cardId].name}`)
       setSelectedCard(null)
@@ -445,12 +473,12 @@ export function GameBoard() {
     }
   }
 
-  const handleLibrarySearchDecline = () => {
+  const handleLibrarySearchDecline = async () => {
     if (!librarySearchData) return
     const spell = gameState.entities[librarySearchData.card]
 
     // Cast spell without selecting a card (fail to find)
-    const success = castSpell(humanPlayerId, librarySearchData.card)
+    const success = await castSpell(humanPlayerId, librarySearchData.card)
     if (success) {
       toast.info(`${spell.name} - No card selected`)
       setSelectedCard(null)
@@ -458,13 +486,13 @@ export function GameBoard() {
     }
   }
 
-  const handleSpellTargetsConfirm = (targetIds: string[]) => {
+  const handleSpellTargetsConfirm = async (targetIds: string[]) => {
     if (!spellTargetData) return
     const spell = gameState.entities[spellTargetData.card]
 
     // TODO: Cast spell with selected targets
     // For now, just cast the spell (backend will need to be updated)
-    const success = castSpell(humanPlayerId, spellTargetData.card)
+    const success = await castSpell(humanPlayerId, spellTargetData.card)
     if (success) {
       toast.success(`${spell.name} cast - ${targetIds.length} target${targetIds.length > 1 ? "s" : ""}`)
       setSelectedCard(null)
@@ -487,6 +515,33 @@ export function GameBoard() {
       className="h-screen w-screen flex flex-col overflow-hidden relative bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: backgroundImage ? `url(${backgroundImage})` : undefined }}
     >
+      {/* Game Info - Top Left */}
+      {(gameState.seed || gameState.devMode) && (
+        <div className="absolute top-4 left-4 z-50 flex flex-col gap-2">
+          {gameState.seed && (
+            <Badge 
+              variant="outline" 
+              className="text-white px-3 py-1 text-xs bg-blue-900/80 backdrop-blur-md border-2 border-blue-600 shadow-xl cursor-pointer hover:bg-blue-800/90"
+              onClick={() => {
+                navigator.clipboard.writeText(gameState.seed!)
+                toast.success(`Seed copied: ${gameState.seed}`)
+              }}
+              title="Click to copy seed"
+            >
+              🌱 Seed: {gameState.seed}
+            </Badge>
+          )}
+          {gameState.devMode && (
+            <Badge 
+              variant="outline" 
+              className="text-white px-3 py-1 text-xs bg-purple-900/80 backdrop-blur-md border-2 border-purple-600 shadow-xl"
+            >
+              🔧 Dev Mode: Infinite Mana
+            </Badge>
+          )}
+        </div>
+      )}
+
       {/* Turn/Phase Badge - Centered on Division */}
       <div className="absolute top-[30%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
         <Badge variant="outline" className="text-white px-4 py-2 text-sm bg-gray-900/80 backdrop-blur-md border-2 border-gray-600 shadow-xl">
@@ -903,33 +958,84 @@ export function GameBoard() {
                         Tap for Mana
                       </Button>
                     )}
-                  {/* Activated Abilities */}
+                  {/* Activated Abilities from JSON */}
                   {selectedCardData.zone === "BATTLEFIELD" &&
-                    parseActivatedAbilities(selectedCardData.oracleText || "", selectedCardData.name).map((ability, idx) => {
+                    selectedCardData.runtimeAbilityState?.activeActivatedAbilities?.map((ability: any, idx: number) => {
+                      // Build cost display from JSON
                       const costParts = []
-                      if (ability.cost.tap) costParts.push("{T}")
-                      if (ability.cost.mana) costParts.push(ability.cost.mana)
-                      if (ability.cost.sacrifice) costParts.push("Sacrifice")
-                      if (ability.cost.discardCount) costParts.push(`Discard ${ability.cost.discardCount}`)
+                      if (ability.cost?.tap) costParts.push("{T}")
+                      if (ability.cost?.mana) costParts.push(ability.cost.mana)
+                      if (ability.cost?.sacrifice) costParts.push("Sacrifice")
+                      if (ability.cost?.discard) costParts.push(`Discard ${ability.cost.discard}`)
                       
                       const costText = costParts.join(", ")
-                      const effectText = ability.effect.replace(/_/g, " ")
+                      
+                      // Build effect display from JSON
+                      let effectText = ability.effect?.action?.replace(/_/g, " ") || "Unknown"
+                      if (ability.effect?.action === "add_mana") {
+                        const colors = ability.effect.mana?.colors?.join("/") || "mana"
+                        const amount = ability.effect.mana?.amount || 1
+                        effectText = `Add ${amount} ${colors} mana`
+                      } else if (ability.effect?.action === "create_delayed_trigger") {
+                        effectText = "Create delayed trigger"
+                      }
+                      
+                      // Check if ability requires targets
+                      const requiresTarget = ability.effect?.targets?.type === "single"
                       
                       return (
                         <Button
                           key={idx}
                           onClick={() => {
-                            const success = activateAbility(humanPlayerId, selectedCard!, idx)
-                            if (success) {
-                              toast.success(`Activated ${effectText}`)
-                            } else {
-                              toast.error(`Cannot activate ability`)
+                            console.log(`[UI] Activating JSON ability ${idx} for ${selectedCardData.name}`, ability)
+                            
+                            // Check if this is a mana ability that needs choice
+                            if (ability.effect?.action === "add_mana" && ability.effect.mana?.choice) {
+                              // Get commander's color identity for choice
+                              const player = gameState.players[humanPlayerId]
+                              const commanderId = player.commandZone[0]
+                              let colors: ManaColor[] = ability.effect.mana.colors || ["W", "U", "B", "R", "G"]
+
+                              if (commanderId) {
+                                const commander = gameState.entities[commanderId]
+                                const commanderColors = commander.colorIdentity?.filter((c: string) =>
+                                  ["W", "U", "B", "R", "G"].includes(c)
+                                ) as ManaColor[]
+                                if (commanderColors && commanderColors.length > 0) {
+                                  colors = commanderColors
+                                }
+                              }
+
+                              // Show mana choice modal
+                              setManaChoiceCard(selectedCard!)
+                              setManaChoiceAbilityIndex(idx)
+                              setManaChoiceOpen(true)
+                              return
                             }
+                            
+                            // Check if ability requires target selection
+                            if (requiresTarget) {
+                              toast.info("Target selection for activated abilities not yet implemented")
+                              console.log("[UI] Ability requires target:", ability.effect.targets)
+                              return
+                            }
+
+                            // Normal ability activation (async)
+                            activateAbility(humanPlayerId, selectedCard!, idx).then((success: boolean) => {
+                              if (success) {
+                                toast.success(`Activated: ${effectText}`)
+                              } else {
+                                toast.error(`Cannot activate ability`)
+                              }
+                            }).catch((error: any) => {
+                              console.error("[UI] Error activating ability:", error)
+                              toast.error("Failed to activate ability")
+                            })
                           }}
                           variant="secondary"
                           size="sm"
-                          disabled={selectedCardData.tapped && ability.cost.tap}
-                          title={`${costText}: ${effectText}${ability.amount ? ` (${ability.amount})` : ""}`}
+                          disabled={selectedCardData.tapped && ability.cost?.tap}
+                          title={`${costText}: ${effectText}`}
                         >
                           ⚡ {costText}
                         </Button>
@@ -1004,8 +1110,10 @@ export function GameBoard() {
             <div className="bg-yellow-900/30 backdrop-blur-md p-3 rounded-lg border border-yellow-500">
               <p className="text-sm text-yellow-300 font-bold mb-2">⚡ You have priority</p>
               <Button
-                onClick={() => {
-                  passPriority()
+                onClick={async () => {
+                  console.log('[UI-CLICK] Pass button clicked by user')
+                  await passPriority()
+                  console.log('[UI-CLICK] passPriority completed, showing toast')
                   toast.info("Priority passed")
                 }}
                 variant="outline"
@@ -1083,12 +1191,33 @@ export function GameBoard() {
         <ManaChoiceDialog
           open={manaChoiceOpen}
           onOpenChange={setManaChoiceOpen}
-          options={parseLandManaOptions(
-            gameState.entities[manaChoiceCard].oracleText || "",
-            gameState.entities[manaChoiceCard].name,
-            gameState,
-            humanPlayerId,
-          )}
+          options={
+            manaChoiceAbilityIndex !== null
+              ? // For activated abilities, use commander colors
+                (() => {
+                  const player = gameState.players[humanPlayerId]
+                  const commanderId = player.commandZone[0]
+                  let colors: ManaColor[] = ["W", "U", "B", "R", "G"]
+
+                  if (commanderId) {
+                    const commander = gameState.entities[commanderId]
+                    const commanderColors = commander.colorIdentity?.filter((c: string) =>
+                      ["W", "U", "B", "R", "G"].includes(c)
+                    ) as ManaColor[]
+                    if (commanderColors && commanderColors.length > 0) {
+                      colors = commanderColors
+                    }
+                  }
+                  return colors
+                })()
+              : // For lands, use parsed options
+                parseLandManaOptions(
+                  gameState.entities[manaChoiceCard].oracleText || "",
+                  gameState.entities[manaChoiceCard].name,
+                  gameState,
+                  humanPlayerId
+                )
+          }
           landName={gameState.entities[manaChoiceCard].name}
           onChoose={handleManaChoice}
         />

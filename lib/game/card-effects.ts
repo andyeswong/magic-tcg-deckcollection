@@ -314,16 +314,28 @@ export function parseTriggeredAbilities(oracleText: string, cardName: string): T
       })
     }
     // "scry" (e.g., Temple lands)
+    // Only match if scry is part of the ETB trigger sentence, not in an activated ability
     else if (text.includes("scry")) {
-      const scryMatch = text.match(/scry (\d+)/)
-      const amount = scryMatch ? parseInt(scryMatch[1]) : 1
-      abilities.push({
-        trigger: "etb",
-        effect: "scry",
-        target: "self",
-        amount,
-        cardName,
-      })
+      // Check if this is actually an ETB trigger with scry, not a mana ability
+      // Pattern: "When [card] enters the battlefield, scry X"
+      // NOT: "{T}: Add mana... When that mana is spent... scry X"
+      const etbScryPattern = /when.*enters(?:\sthe\sbattlefield)?[^.]*scry\s+(\d+)/i
+      const scryMatch = text.match(etbScryPattern)
+      
+      // Also check it's not part of a tap ability (has {T} or "add" before the scry)
+      const isManaAbility = text.includes("{t}:") && text.indexOf("{t}:") < text.indexOf("scry")
+      const hasAddMana = text.includes("add") && text.indexOf("add") < text.indexOf("scry")
+      
+      if (scryMatch && !isManaAbility && !hasAddMana) {
+        const amount = parseInt(scryMatch[1])
+        abilities.push({
+          trigger: "etb",
+          effect: "scry",
+          target: "self",
+          amount,
+          cardName,
+        })
+      }
     }
     // "draw a card"
     else if (text.includes("draw a card") || text.includes("draw") && text.includes("card")) {
@@ -438,6 +450,21 @@ export function parseTriggeredAbilities(oracleText: string, cardName: string): T
     }
   }
 
+  // Draw triggers - "Whenever you draw a card..."
+  if ((text.includes("whenever") || text.includes("when")) && text.includes("you draw")) {
+    // Put +1/+1 counter on this creature (e.g., Chasm Skulker)
+    if (text.includes("put") && text.includes("+1/+1 counter")) {
+      abilities.push({
+        trigger: "draw",
+        effect: "add_counter_self",
+        target: "self",
+        amount: 1,
+        cardName,
+      })
+    }
+    // Other draw triggers can be added here
+  }
+
   return abilities
 }
 
@@ -536,6 +563,16 @@ function getValidTargets(
   const validTargets: string[] = []
 
   switch (ability.effect) {
+    case "support":
+      // Support targets any creatures (other than itself)
+      for (const cardId of gameState.battlefield) {
+        const card = gameState.entities[cardId]
+        if (card.typeLine.toLowerCase().includes("creature") && cardId !== sourceCard.instanceId) {
+          validTargets.push(cardId)
+        }
+      }
+      break
+
     case "add_counter_target":
       // Target creature you control or any creature
       for (const cardId of gameState.battlefield) {
@@ -845,6 +882,19 @@ export function executeTriggerEffect(
 
     case "draw_card":
       drawCard(gameState, trigger.controllerId)
+      break
+
+    case "gain_life":
+      // Gain life effect
+      const player = gameState.players[trigger.controllerId]
+      const lifeToGain = trigger.amount || 1
+      player.life += lifeToGain
+      console.log(`[TRIGGER] ${player.name} gained ${lifeToGain} life (now at ${player.life})`)
+      
+      addGameLog(gameState, `gained ${lifeToGain} life`, "effect", trigger.controllerId, {
+        cardName: sourceCard.name,
+        details: `Life total: ${player.life}`,
+      })
       break
 
     case "scry":
@@ -1187,6 +1237,10 @@ export interface ActivatedAbility {
   amount?: number
   manaToAdd?: string[] // For add_mana effects, array of colors like ["G", "W"]
   timing: "instant" | "sorcery" // When can it be activated
+  hasAdditionalCosts?: boolean // Flag for abilities with complex additional costs not yet supported
+  targetRestriction?: string // For JSON abilities
+  targetFilters?: string[] // For JSON abilities
+  counterType?: string // For JSON abilities
 }
 
 export function parseActivatedAbilities(oracleText: string, cardName: string): ActivatedAbility[] {

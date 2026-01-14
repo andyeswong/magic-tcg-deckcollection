@@ -111,6 +111,9 @@ export interface RuntimeAbilityState {
   // Active triggered abilities registered with game engine
   activeTriggeredAbilities: ActiveTriggeredAbility[]
 
+  // Active activated abilities from JSON (available when card is on battlefield)
+  activeActivatedAbilities?: ActivatedAbility[]
+
   // Granted abilities from other permanents
   grantedAbilities: GrantedAbility[]
 

@@ -40,9 +40,10 @@ function createCardInstance(
 ): CardInstance {
   const cardData = deckCard.cards || {}
 
-  // Ensure mana_cost is set - log warning if missing
+  // Ensure mana_cost is set - log warning if missing (except for lands, which have no mana cost)
   const manaCost = deckCard.mana_cost || ""
-  if (!manaCost && deckCard.card_name) {
+  const isLand = deckCard.type_line?.toLowerCase().includes("land")
+  if (!manaCost && deckCard.card_name && !isLand) {
     console.warn(`[INIT] Card "${deckCard.card_name}" has no mana_cost in database. Please re-add this card to your deck.`)
   }
 
@@ -77,11 +78,30 @@ function createCardInstance(
   }
 }
 
+// Seeded random number generator (for reproducible shuffles)
+function seededRandom(seed: string): () => number {
+  let hash = 0
+  for (let i = 0; i < seed.length; i++) {
+    const char = seed.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32-bit integer
+  }
+  
+  // Simple LCG (Linear Congruential Generator)
+  let state = Math.abs(hash)
+  return function() {
+    state = (state * 1664525 + 1013904223) % 4294967296
+    return state / 4294967296
+  }
+}
+
 // Shuffle an array (Fisher-Yates)
-function shuffleArray<T>(array: T[]): T[] {
+function shuffleArray<T>(array: T[], seed?: string): T[] {
   const shuffled = [...array]
+  const rng = seed ? seededRandom(seed) : Math.random
+  
   for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
+    const j = Math.floor(rng() * (i + 1))
     ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
   }
   return shuffled
@@ -120,6 +140,7 @@ export function initializeGame(
   humanPlayerName: string,
   botPlayerId: string = "bot-player",
   botPlayerName: string = "Bot",
+  options?: { seed?: string; devMode?: boolean }
 ): GameState {
   const matchId = uuidv4()
   const entities: Record<string, CardInstance> = {}
@@ -164,8 +185,8 @@ export function initializeGame(
     }
   })
 
-  // Shuffle human library
-  const shuffledHumanLibrary = shuffleArray(humanLibraryIds)
+  // Shuffle human library with optional seed
+  const shuffledHumanLibrary = shuffleArray(humanLibraryIds, options?.seed ? `${options.seed}-human` : undefined)
 
   // Create identical deck for bot player
   const botLibraryIds: string[] = []
@@ -207,20 +228,34 @@ export function initializeGame(
     }
   })
 
-  // Shuffle bot library
-  const shuffledBotLibrary = shuffleArray(botLibraryIds)
+  // Shuffle bot library with optional seed
+  const shuffledBotLibrary = shuffleArray(botLibraryIds, options?.seed ? `${options.seed}-bot` : undefined)
 
   // Create player states
   const humanPlayer = createPlayerState(humanPlayerId, humanPlayerName)
   humanPlayer.library = shuffledHumanLibrary
   humanPlayer.commandZone = humanCommanderIds
+  
+  // Apply dev mode: 999 of each mana
+  if (options?.devMode) {
+    humanPlayer.manaPool = { W: 999, U: 999, B: 999, R: 999, G: 999, C: 999 }
+    console.log("[DEV MODE] Human player starting with 999 of each mana")
+  }
 
   const botPlayer = createPlayerState(botPlayerId, botPlayerName)
   botPlayer.library = shuffledBotLibrary
   botPlayer.commandZone = botCommanderIds
+  
+  // Bot doesn't get dev mode mana (for fair testing)
 
-  // Randomly decide who goes first
-  const firstPlayerId = Math.random() < 0.5 ? humanPlayerId : botPlayerId
+  // Randomly decide who goes first (unless seed is provided)
+  const firstPlayerId = options?.seed 
+    ? (seededRandom(options.seed)() < 0.5 ? humanPlayerId : botPlayerId)
+    : (Math.random() < 0.5 ? humanPlayerId : botPlayerId)
+  
+  if (options?.seed) {
+    console.log(`[SEEDED GAME] Using seed: "${options.seed}", first player: ${firstPlayerId === humanPlayerId ? 'Human' : 'Bot'}`)
+  }
 
   // Create initial game state
   const gameState: GameState = {
@@ -235,6 +270,10 @@ export function initializeGame(
       commanderDamageThreshold: 21,
       mulliganType: "LONDON",
     },
+
+    // Store game options
+    seed: options?.seed,
+    devMode: options?.devMode,
 
     turnState: {
       activePlayerId: firstPlayerId,
@@ -318,4 +357,17 @@ export function startGame(gameState: GameState): void {
     iterations++
   }
   console.log(`[GAME] Game started in phase: ${gameState.turnState.phase}`)
+  console.log(`[GAME-DEBUG] gameState.devMode = ${gameState.devMode}`)
+  
+  // Apply dev mode mana after phase advancement (to avoid it being cleared)
+  if (gameState.devMode) {
+    console.log(`[DEV MODE] Applying dev mode mana...`)
+    Object.values(gameState.players).forEach((player) => {
+      player.manaPool = { W: 999, U: 999, B: 999, R: 999, G: 999, C: 999 }
+      console.log(`[DEV MODE] Applied 999 mana to player ${player.name}: W=${player.manaPool.W}, U=${player.manaPool.U}, B=${player.manaPool.B}, R=${player.manaPool.R}, G=${player.manaPool.G}, C=${player.manaPool.C}`)
+    })
+    console.log("[DEV MODE] Applied 999 of each mana to all players after game start")
+  } else {
+    console.log(`[DEV MODE] Not applying dev mode mana (devMode is ${gameState.devMode})`)
+  }
 }

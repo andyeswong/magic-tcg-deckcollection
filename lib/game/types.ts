@@ -180,6 +180,10 @@ export interface GameState {
 
   rulesConfig: GameConfig
 
+  // Game options (for debugging/testing)
+  seed?: string
+  devMode?: boolean
+
   // Turn structure
   turnState: {
     activePlayerId: string
